@@ -164,9 +164,18 @@ GeoBerdsk.App = (function() {
         selectedModeId = modeId;
         document.querySelectorAll('[data-mode]').forEach(btn => {
             const on = btn.getAttribute('data-mode') === modeId;
+            btn.classList.toggle('on', on);
             btn.classList.toggle('active', on);
             btn.setAttribute('aria-selected', on ? 'true' : 'false');
         });
+        const hints = {
+            classic: '5 \u0440\u0430\u0443\u043d\u0434\u043e\u0432 \u00b7 \u0431\u0435\u0437 \u043b\u0438\u043c\u0438\u0442\u0430 \u0432\u0440\u0435\u043c\u0435\u043d\u0438',
+            timeattack: '5 \u0440\u0430\u0443\u043d\u0434\u043e\u0432 \u00b7 30 \u0441\u0435\u043a\u0443\u043d\u0434',
+            districts: '10 \u0440\u0430\u0443\u043d\u0434\u043e\u0432 \u00b7 \u0443\u0433\u0430\u0434\u0430\u0439 \u043c\u0438\u043a\u0440\u043e\u0440\u0430\u0439\u043e\u043d',
+            marathon: '\u0418\u0433\u0440\u0430\u0439, \u043f\u043e\u043a\u0430 \u043d\u0435 \u043f\u0440\u043e\u043c\u0430\u0445\u043d\u0451\u0448\u044c\u0441\u044f (>500 \u043c)',
+        };
+        const hint = document.getElementById('mode-hint');
+        if (hint) hint.textContent = hints[modeId] || '';
     }
 
     async function startGame(modeId) {
@@ -658,7 +667,7 @@ GeoBerdsk.App = (function() {
         if (!container) return;
         container.innerHTML = '';
 
-        const colors = ['#6CBB3C', '#57A32E', '#8FD15A', '#FFFFFF', '#3D8B40', '#F5A623'];
+        const colors = ['#6CBB3C', '#57A32E', '#8FD15A', '#FFFFFF', '#3D8B40', '#A8E063'];
         for (let i = 0; i < 48; i++) {
             const piece = document.createElement('div');
             piece.className = 'confetti-piece';
