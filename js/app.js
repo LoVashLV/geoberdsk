@@ -24,20 +24,14 @@ GeoBerdsk.App = (function() {
             GeoBerdsk.Panorama.init();
         });
         selectedModeId = 'classic';
-        seedLeaderboardFromRecords();
-        refreshAuthUI();
         selectMode('classic');
         updatePlayerUI();
-        updateLeaderboardUI();
         bindEvents();
         showScreen('menu');
     }
 
     function getStoredApiKey() {
-        const fromConfig = (GeoBerdsk.CONFIG && GeoBerdsk.CONFIG.yandexApiKey) || '';
-        if (fromConfig) return String(fromConfig).trim();
-        const data = GeoBerdsk.Storage.load();
-        return (data.settings && data.settings.yandexApiKey) || '';
+        return ((GeoBerdsk.CONFIG && GeoBerdsk.CONFIG.yandexApiKey) || '').trim();
     }
 
     function injectYandexScript() {
@@ -46,13 +40,11 @@ GeoBerdsk.App = (function() {
                 resolve();
                 return;
             }
-
             const key = getStoredApiKey();
             if (!key) {
                 resolve();
                 return;
             }
-
             const script = document.createElement('script');
             script.src = 'https://api-maps.yandex.ru/2.1/?lang=ru_RU&load=package.full&apikey=' +
                 encodeURIComponent(key);
@@ -73,118 +65,16 @@ GeoBerdsk.App = (function() {
                 GeoBerdsk.Map.invalidateSize();
             }, 180);
         }
-        if (screenId === 'menu') refreshAuthUI();
-    }
-
-    let authTab = 'login';
-
-    function refreshAuthUI() {
-        const loggedIn = GeoBerdsk.Auth.isLoggedIn();
-        const user = GeoBerdsk.Auth.currentUser();
-        const fab = $('btn-auth');
-        const nickEl = $('player-nick');
-        const lbCard = $('lb-card');
-        const lbLocked = $('lb-locked');
-        const logoutBtn = $('btn-logout');
-        const playBtn = $('btn-play');
-
-        if (playBtn) playBtn.disabled = false;
-
-        if (fab) {
-            fab.textContent = loggedIn ? (user.nick || 'Аккаунт') : 'Войти';
-            fab.classList.toggle('on', loggedIn);
-        }
-        if (nickEl) nickEl.textContent = loggedIn ? user.nick : 'Гость';
-        if (lbCard) lbCard.hidden = !loggedIn;
-        if (lbLocked) lbLocked.hidden = loggedIn;
-        if (logoutBtn) logoutBtn.hidden = !loggedIn;
-    }
-
-    function openAuthModal(open) {
-        const modal = $('auth-modal');
-        if (!modal) return;
-        modal.hidden = !open;
-        if (open) {
-            setAuthTab(GeoBerdsk.Auth.isLoggedIn() ? 'login' : authTab);
-            const err = $('auth-error');
-            if (err) err.hidden = true;
-        }
-    }
-
-    function setAuthTab(tab) {
-        authTab = tab === 'register' ? 'register' : 'login';
-        document.querySelectorAll('[data-auth-tab]').forEach(btn => {
-            btn.classList.toggle('on', btn.getAttribute('data-auth-tab') === authTab);
-        });
-        const nickField = $('field-nick');
-        if (nickField) nickField.hidden = authTab !== 'register';
-        const submit = $('auth-submit');
-        if (submit) submit.textContent = authTab === 'register' ? 'Создать аккаунт' : 'Войти';
-        const pass = $('auth-password');
-        if (pass) {
-            pass.autocomplete = authTab === 'register' ? 'new-password' : 'current-password';
-        }
-    }
-
-    async function handleAuthSubmit(e) {
-        e.preventDefault();
-        const err = $('auth-error');
-        const email = $('auth-email')?.value || '';
-        const password = $('auth-password')?.value || '';
-        const nick = $('auth-nick')?.value || '';
-
-        const result = authTab === 'register'
-            ? await GeoBerdsk.Auth.register({ email, password, nick })
-            : await GeoBerdsk.Auth.login({ email, password });
-
-        if (!result.ok) {
-            if (err) {
-                err.hidden = false;
-                err.textContent = result.error || 'Ошибка';
-            }
-            return;
-        }
-        if (err) err.hidden = true;
-        openAuthModal(false);
-        refreshAuthUI();
-        updatePlayerUI();
-        updateLeaderboardUI();
     }
 
     function bindEvents() {
-        $('btn-auth')?.addEventListener('click', () => openAuthModal(true));
-        document.querySelectorAll('[data-close-auth]').forEach(el => {
-            el.addEventListener('click', () => openAuthModal(false));
-        });
-        document.querySelectorAll('[data-auth-tab]').forEach(btn => {
-            btn.addEventListener('click', () => setAuthTab(btn.getAttribute('data-auth-tab')));
-        });
-        $('auth-form')?.addEventListener('submit', handleAuthSubmit);
-        $('btn-logout')?.addEventListener('click', () => {
-            GeoBerdsk.Auth.logout();
-            openAuthModal(false);
-            refreshAuthUI();
-            updatePlayerUI();
-            updateLeaderboardUI();
-        });
-
         $('btn-play')?.addEventListener('click', () => {
             startGame(selectedModeId || 'classic');
         });
 
         document.querySelectorAll('[data-mode]').forEach(btn => {
             btn.addEventListener('click', () => {
-                const modeId = btn.getAttribute('data-mode');
-                selectMode(modeId);
-            });
-        });
-
-        document.querySelectorAll('[data-lb-mode]').forEach(tab => {
-            tab.addEventListener('click', () => {
-                document.querySelectorAll('[data-lb-mode]').forEach(t => {
-                    t.classList.toggle('on', t === tab);
-                });
-                updateLeaderboardUI(tab.getAttribute('data-lb-mode'));
+                selectMode(btn.getAttribute('data-mode'));
             });
         });
 
@@ -228,7 +118,6 @@ GeoBerdsk.App = (function() {
         });
     }
 
-
     function selectMode(modeId) {
         if (!GeoBerdsk.Game.MODES[modeId]) return;
         selectedModeId = modeId;
@@ -247,59 +136,9 @@ GeoBerdsk.App = (function() {
         if (nameEl) nameEl.textContent = MODE_COPY.classic.name;
         if (descEl) descEl.textContent = MODE_COPY.classic.desc;
 
-        updateLeaderboardUI(modeId);
-        document.querySelectorAll('[data-lb-mode]').forEach(t => {
-            t.classList.toggle('on', t.getAttribute('data-lb-mode') === modeId);
-        });
-
         const sel = $('selected-mode-label');
         const copy = MODE_COPY[modeId] || MODE_COPY.classic;
         if (sel) sel.textContent = 'Выбран: ' + copy.name;
-    }
-
-    function seedLeaderboardFromRecords() {
-        const data = GeoBerdsk.Storage.load();
-        if ((data.leaderboard || []).length) return;
-        if (!GeoBerdsk.Storage.isLoggedIn()) return;
-        Object.keys(data.records || {}).forEach(mode => {
-            if (!GeoBerdsk.Game.MODES[mode]) return;
-            const score = data.records[mode] || 0;
-            if (score > 0) {
-                GeoBerdsk.Storage.addLeaderboardEntry({ mode, score, rounds: 0 });
-            }
-        });
-    }
-
-    function updateLeaderboardUI(modeOverride) {
-        const list = $('leaderboard-list');
-        if (!list) return;
-
-        const modeId = modeOverride || selectedModeId || 'classic';
-        document.querySelectorAll('[data-lb-mode]').forEach(tab => {
-            tab.classList.toggle('on', tab.getAttribute('data-lb-mode') === modeId);
-        });
-
-        const entries = GeoBerdsk.Storage.getLeaderboard(modeId, 10);
-        if (!GeoBerdsk.Storage.isLoggedIn()) {
-            list.innerHTML = '';
-            return;
-        }
-
-        const myNick = GeoBerdsk.Storage.getNickname();
-
-        if (!entries.length) {
-            list.innerHTML = '<p class="muted">Сыграй партию — здесь появятся лучшие результаты</p>';
-            return;
-        }
-
-        list.innerHTML = entries.map((e, i) => {
-            const me = myNick && e.nick === myNick ? ' me' : '';
-            return '<div class="lb-row' + me + '">' +
-                '<span class="lb-rank">' + (i + 1) + '</span>' +
-                '<span class="lb-name">' + escapeHtml(e.nick) + '</span>' +
-                '<span class="lb-score">' + Number(e.score).toLocaleString('ru-RU') + '</span>' +
-                '</div>';
-        }).join('');
     }
 
     async function startGame(modeId) {
@@ -497,7 +336,6 @@ GeoBerdsk.App = (function() {
         GeoBerdsk.Panorama.destroy();
         showGameSummary(summary);
         updatePlayerUI();
-        updateLeaderboardUI();
     }
 
     function returnToMenu() {
@@ -507,18 +345,10 @@ GeoBerdsk.App = (function() {
             try { GeoBerdsk.Game.endGame(); } catch (e) { /* ignore */ }
         }
         updatePlayerUI();
-        updateLeaderboardUI();
-        refreshAuthUI();
         showScreen('menu');
     }
 
     function updatePlayerUI() {
-        const nickEl = $('player-nick');
-        if (nickEl) {
-            nickEl.textContent = GeoBerdsk.Storage.isLoggedIn()
-                ? GeoBerdsk.Storage.getNickname()
-                : 'Гость';
-        }
         const data = GeoBerdsk.Storage.load();
         const info = GeoBerdsk.XP.getLevelInfo(data.player.xp);
 

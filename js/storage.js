@@ -13,8 +13,6 @@ GeoBerdsk.Storage = (function() {
             totalRounds: 0,
             perfectHits: 0,
             bestStreak: 0,
-            nickname: '',
-            registered: false,
         },
         records: {
             classic: 0,
@@ -22,11 +20,9 @@ GeoBerdsk.Storage = (function() {
             marathon: 0,
             districts: 0,
         },
-        leaderboard: [],
         history: [],
         settings: {
             soundEnabled: true,
-            yandexApiKey: '',
         },
     };
 
@@ -64,50 +60,6 @@ GeoBerdsk.Storage = (function() {
         });
     }
 
-    function normalizeNick(nick) {
-        return String(nick || '').trim().replace(/\s+/g, ' ').slice(0, 16);
-    }
-
-    function getNickname() {
-        if (GeoBerdsk.Auth && GeoBerdsk.Auth.isLoggedIn()) {
-            const u = GeoBerdsk.Auth.currentUser();
-            if (u && u.nick) return u.nick;
-        }
-        return normalizeNick(load().player.nickname) || 'Гость';
-    }
-
-    function isLoggedIn() {
-        return !!(GeoBerdsk.Auth && GeoBerdsk.Auth.isLoggedIn());
-    }
-
-    function addLeaderboardEntry({ mode, score, rounds }) {
-        if (!score || score <= 0) return load();
-        if (!isLoggedIn()) return load();
-        const nick = getNickname();
-        const user = GeoBerdsk.Auth.currentUser();
-        return update(data => {
-            if (!Array.isArray(data.leaderboard)) data.leaderboard = [];
-            data.leaderboard.push({
-                nick,
-                email: user ? user.email : '',
-                mode,
-                score,
-                rounds: rounds || 0,
-                timestamp: Date.now(),
-            });
-            data.leaderboard.sort((a, b) => b.score - a.score || a.timestamp - b.timestamp);
-            data.leaderboard = data.leaderboard.slice(0, 40);
-            return data;
-        });
-    }
-
-    function getLeaderboard(modeId, limit) {
-        const list = load().leaderboard || [];
-        const filtered = modeId ? list.filter(e => e.mode === modeId) : list.slice();
-        filtered.sort((a, b) => b.score - a.score || a.timestamp - b.timestamp);
-        return filtered.slice(0, limit || 10);
-    }
-
     function reset() {
         save(deepClone(DEFAULT_DATA));
     }
@@ -128,9 +80,5 @@ GeoBerdsk.Storage = (function() {
         return target;
     }
 
-    return {
-        load, save, update, addGameHistory, reset,
-        getNickname, normalizeNick, isLoggedIn,
-        addLeaderboardEntry, getLeaderboard,
-    };
+    return { load, save, update, addGameHistory, reset };
 })();

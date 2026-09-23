@@ -278,14 +278,6 @@ GeoBerdsk.Game = (function() {
             avgDistance,
         });
 
-        if (state.totalScore > 0) {
-            GeoBerdsk.Storage.addLeaderboardEntry({
-                mode: modeId,
-                score: state.totalScore,
-                rounds: roundCount,
-            });
-        }
-
         const summary = {
             mode: state.mode,
             totalScore: state.totalScore,

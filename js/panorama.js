@@ -1,96 +1,92 @@
 /**
  * GeoBerdsk — Panorama Manager
- * С ключом: JS API без panoramaName / маркеров адресов.
- * Без ключа или при ошибке: iframe + маски.
+ *
+ * Улицы скрываются только в официальном JS API-плеере:
+ * controls: [] (без panoramaName), getName→'', getMarkers→[].
+ * Iframe всегда спойлерит адреса — при наличии ключа iframe НЕ используем.
  */
 window.GeoBerdsk = window.GeoBerdsk || {};
 
 GeoBerdsk.Panorama = (function() {
     let player = null;
-    let isReady = false;
-    let readyCallbacks = [];
-    let initFailed = false;
     let spoilerObserver = null;
     let stylesInjected = false;
+    let usedApi = false;
 
     function init() {
         ensureSpoilerStyles();
-
-        if (typeof ymaps === 'undefined') {
-            initFailed = true;
-            return;
-        }
-
-        ymaps.ready(function() {
-            isReady = true;
-            flushReady();
-        });
-
-        setTimeout(() => {
-            if (!isReady) {
-                initFailed = true;
-                flushReady();
-            }
-        }, 10000);
-    }
-
-    function flushReady() {
-        readyCallbacks.forEach(cb => cb());
-        readyCallbacks = [];
-    }
-
-    function whenReady() {
-        return new Promise((resolve) => {
-            if (isReady || initFailed) resolve();
-            else readyCallbacks.push(resolve);
-        });
     }
 
     function getApiKey() {
-        const fromConfig = GeoBerdsk.CONFIG && GeoBerdsk.CONFIG.yandexApiKey;
-        if (fromConfig) return String(fromConfig).trim();
-        try {
-            const data = GeoBerdsk.Storage.load();
-            return (data.settings && data.settings.yandexApiKey) || '';
-        } catch (e) {
-            return '';
-        }
+        return ((GeoBerdsk.CONFIG && GeoBerdsk.CONFIG.yandexApiKey) || '').trim();
+    }
+
+    function ensureYmaps(timeoutMs) {
+        timeoutMs = timeoutMs || 15000;
+        return new Promise((resolve) => {
+            const start = Date.now();
+
+            function tryReady() {
+                if (typeof ymaps !== 'undefined') {
+                    try {
+                        ymaps.ready(function() { resolve(true); });
+                        return;
+                    } catch (e) {
+                        resolve(false);
+                        return;
+                    }
+                }
+                if (Date.now() - start >= timeoutMs) {
+                    resolve(false);
+                    return;
+                }
+                setTimeout(tryReady, 120);
+            }
+
+            tryReady();
+        });
     }
 
     async function load(containerId, lat, lng) {
         destroy();
+        usedApi = false;
 
         const container = document.getElementById(containerId);
         if (!container) return false;
         container.innerHTML = '';
 
-        const hasKey = !!getApiKey();
-
-        if (hasKey) {
-            await whenReady();
-            if (isReady && !initFailed) {
-                const panorama = await locateWithApi(lat, lng);
-                if (panorama) {
-                    const ok = createApiPlayer(containerId, panorama);
-                    if (ok) {
-                        startSpoilerWatch(container);
-                        return true;
-                    }
-                } else {
-                    console.warn('GeoBerdsk: panorama.locate empty — check API key domains / quota');
-                }
-            } else {
-                console.warn('GeoBerdsk: ymaps not ready — falling back to iframe');
-            }
+        const key = getApiKey();
+        if (!key) {
+            console.warn('GeoBerdsk: no API key');
+            return loadIframe(container, lat, lng);
         }
 
-        return loadIframe(container, lat, lng);
+        const ready = await ensureYmaps(15000);
+        if (!ready) {
+            console.warn('GeoBerdsk: ymaps not available');
+            return false;
+        }
+
+        if (ymaps.panorama.isSupported && !ymaps.panorama.isSupported()) {
+            console.warn('GeoBerdsk: panorama not supported in this browser');
+            return false;
+        }
+
+        const panorama = await locateWithApi(lat, lng);
+        if (!panorama) return false;
+
+        const ok = createApiPlayer(containerId, panorama);
+        if (!ok) return false;
+
+        usedApi = true;
+        startSpoilerWatch(container);
+        return true;
     }
 
     function locateWithApi(lat, lng) {
         return new Promise((resolve) => {
             const point = [lat, lng];
-            const radii = [80, 250, 500, 1000];
+            const radii = [100, 300, 600, 1200];
             let i = 0;
 
             function next() {
@@ -99,7 +95,7 @@ GeoBerdsk.Panorama = (function() {
                     return;
                 }
                 const radius = radii[i++];
-                const timeout = setTimeout(() => next(), 4000);
+                const timeout = setTimeout(() => next(), 4500);
 
                 try {
                     ymaps.panorama.locate(point, {
@@ -111,9 +107,8 @@ GeoBerdsk.Panorama = (function() {
                             if (panoramas && panoramas.length) resolve(panoramas[0]);
                             else next();
                         },
-                        (err) => {
+                        () => {
                             clearTimeout(timeout);
-                            console.warn('GeoBerdsk: panorama.locate error', err);
                             resolve(null);
                         }
                     );
@@ -127,7 +122,6 @@ GeoBerdsk.Panorama = (function() {
         });
     }
 
-    /** Скрываем имя улицы и адресные маркеры */
     function stripSpoilers(panorama) {
         try {
             return new Proxy(panorama, {
@@ -154,16 +148,14 @@ GeoBerdsk.Panorama = (function() {
     function createApiPlayer(containerId, panorama) {
         try {
             const clean = stripSpoilers(panorama);
-            // controls без panoramaName — иначе сверху видна улица
             player = new ymaps.panorama.Player(containerId, clean, {
                 direction: [Math.random() * 360, 0],
-                span: [110, 55],
-                controls: ['zoomControl'],
+                span: [120, 60],
+                controls: [],
                 suppressMapOpenBlock: true,
                 hotkeysEnabled: false,
             });
 
-            // на смене точки снова глушим маркеры
             try {
                 player.events.add('panoramachange', () => {
                     const el = document.getElementById(containerId);
@@ -173,7 +165,7 @@ GeoBerdsk.Panorama = (function() {
 
             return true;
         } catch (e) {
-            console.warn('GeoBerdsk: panorama player error', e);
+            console.warn('GeoBerdsk: player error', e);
             player = null;
             return false;
         }
@@ -192,12 +184,9 @@ GeoBerdsk.Panorama = (function() {
             iframe.className = 'panorama-iframe';
             iframe.title = 'Панорама Бердска';
             iframe.setAttribute('allowfullscreen', 'true');
-            iframe.setAttribute('loading', 'eager');
-            iframe.referrerPolicy = 'no-referrer-when-downgrade';
             iframe.src =
                 'https://yandex.ru/map-widget/v1/?ll=' + ll +
-                '&z=17' +
-                '&l=stv' +
+                '&z=17&l=stv' +
                 '&panorama%5Bpoint%5D=' + point +
                 '&panorama%5Bdirection%5D=' + direction + '%2C0' +
                 '&panorama%5Bspan%5D=120%2C60';
@@ -221,7 +210,6 @@ GeoBerdsk.Panorama = (function() {
                 settled = true;
                 resolve(ok);
             };
-
             iframe.onload = () => finish(true);
             iframe.onerror = () => finish(false);
             setTimeout(() => finish(true), 2500);
@@ -231,7 +219,6 @@ GeoBerdsk.Panorama = (function() {
     function ensureSpoilerStyles() {
         if (stylesInjected) return;
         stylesInjected = true;
-
         const style = document.createElement('style');
         style.id = 'geoberdsk-spoiler-css';
         style.textContent = `
@@ -244,7 +231,6 @@ GeoBerdsk.Panorama = (function() {
             ymaps[class*="panorama-name"],
             ymaps[class*="control__name"],
             ymaps[class*="control_name"],
-            ymaps[class*="inception"],
             ymaps[class*="fullscreen"],
             ymaps[class*="marker"],
             ymaps[class*="hotspot"],
@@ -252,11 +238,10 @@ GeoBerdsk.Panorama = (function() {
             ymaps[class*="goto"],
             ymaps[class*="organization"],
             ymaps[class*="hint"],
-            .ymaps-e-hotspot-layer,
-            [class*="panorama"][class*="marker"],
-            [class*="panorama"][class*="hotspot"],
             [class*="panorama-name"],
-            [class*="panoramaName"] {
+            [class*="panoramaName"],
+            [class*="panorama"][class*="marker"],
+            [class*="panorama"][class*="hotspot"] {
                 display: none !important;
                 visibility: hidden !important;
                 opacity: 0 !important;
@@ -268,12 +253,9 @@ GeoBerdsk.Panorama = (function() {
 
     function startSpoilerWatch(container) {
         stopSpoilerWatch();
-
         const kill = () => {
             if (!container) return;
-            container.querySelectorAll('a[href*="yandex.ru/maps"], a[href*="maps.yandex"]').forEach(a => {
-                a.remove();
-            });
+            container.querySelectorAll('a[href*="yandex.ru/maps"], a[href*="maps.yandex"]').forEach(a => a.remove());
             container.querySelectorAll(
                 '[class*="marker"], [class*="hotspot"], [class*="gototext"], [class*="panorama-name"], [class*="panoramaName"]'
             ).forEach(el => {
@@ -283,14 +265,10 @@ GeoBerdsk.Panorama = (function() {
                 el.style.setProperty('pointer-events', 'none', 'important');
             });
         };
-
         kill();
         spoilerObserver = new MutationObserver(kill);
         spoilerObserver.observe(container, { childList: true, subtree: true });
-        setTimeout(kill, 400);
-        setTimeout(kill, 1200);
-        setTimeout(kill, 2500);
-        setTimeout(kill, 4500);
+        [300, 800, 1600, 3000].forEach(ms => setTimeout(kill, ms));
     }
 
     function stopSpoilerWatch() {
@@ -311,15 +289,11 @@ GeoBerdsk.Panorama = (function() {
             const iframe = container.querySelector('iframe');
             if (iframe) iframe.src = 'about:blank';
         }
+        usedApi = false;
     }
 
-    function isAvailable() {
-        return true;
-    }
+    function isAvailable() { return true; }
+    function hasCleanMode() { return usedApi; }
 
-    function hasCleanMode() {
-        return !!getApiKey() && isReady && !initFailed;
-    }
-
-    return { init, whenReady, load, destroy, isAvailable, hasCleanMode, getApiKey };
+    return { init, load, destroy, isAvailable, hasCleanMode, getApiKey };
 })();
