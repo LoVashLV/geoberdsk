@@ -1,6 +1,5 @@
 /**
  * GeoBerdsk — Storage Manager
- * Ник хранится в localStorage — аккаунт остаётся после перезахода на этом устройстве/браузере.
  */
 window.GeoBerdsk = window.GeoBerdsk || {};
 
@@ -69,39 +68,28 @@ GeoBerdsk.Storage = (function() {
         return String(nick || '').trim().replace(/\s+/g, ' ').slice(0, 16);
     }
 
-    function isRegistered() {
-        const data = load();
-        const nick = normalizeNick(data.player.nickname);
-        return !!(data.player.registered && nick);
-    }
-
     function getNickname() {
-        return normalizeNick(load().player.nickname) || 'Игрок';
+        if (GeoBerdsk.Auth && GeoBerdsk.Auth.isLoggedIn()) {
+            const u = GeoBerdsk.Auth.currentUser();
+            if (u && u.nick) return u.nick;
+        }
+        return normalizeNick(load().player.nickname) || 'Гость';
     }
 
-    function register(nick) {
-        const clean = normalizeNick(nick);
-        if (clean.length < 2) return { ok: false, error: 'Минимум 2 символа' };
-        update(data => {
-            data.player.nickname = clean;
-            data.player.registered = true;
-            return data;
-        });
-        return { ok: true, nick: clean };
-    }
-
-    function setNickname(nick) {
-        return register(nick);
+    function isLoggedIn() {
+        return !!(GeoBerdsk.Auth && GeoBerdsk.Auth.isLoggedIn());
     }
 
     function addLeaderboardEntry({ mode, score, rounds }) {
         if (!score || score <= 0) return load();
-        if (!isRegistered()) return load();
+        if (!isLoggedIn()) return load();
         const nick = getNickname();
+        const user = GeoBerdsk.Auth.currentUser();
         return update(data => {
             if (!Array.isArray(data.leaderboard)) data.leaderboard = [];
             data.leaderboard.push({
                 nick,
+                email: user ? user.email : '',
                 mode,
                 score,
                 rounds: rounds || 0,
@@ -142,7 +130,7 @@ GeoBerdsk.Storage = (function() {
 
     return {
         load, save, update, addGameHistory, reset,
-        getNickname, setNickname, register, isRegistered, normalizeNick,
+        getNickname, normalizeNick, isLoggedIn,
         addLeaderboardEntry, getLeaderboard,
     };
 })();

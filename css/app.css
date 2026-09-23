@@ -222,3 +222,29 @@ a{color:var(--gg);font-weight:600}
   .actions{flex-direction:row}
   .actions .btn-cta,.actions .btn-ghost{flex:1}
 }
+
+
+.auth-fab{position:fixed;top:calc(12px + var(--safe-t));right:14px;z-index:50;min-height:40px;padding:0 16px;border-radius:999px;background:rgba(24,34,24,.92);border:1px solid var(--line);font-weight:750;font-size:13px;backdrop-filter:blur(10px);box-shadow:var(--shadow);transition:.2s ease}
+.auth-fab:hover,.auth-fab.on{border-color:rgba(111,191,60,.5);background:var(--gg3);color:var(--gg-soft)}
+.lb-locked{text-align:center;font-size:13px;color:var(--mute);padding:8px 12px;border:1px dashed var(--line);border-radius:14px;background:rgba(255,255,255,.02)}
+.auth-sheet{gap:12px}
+.auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.auth-tab{min-height:40px;border-radius:12px;font-weight:700;background:rgba(255,255,255,.04);border:1px solid transparent;color:var(--mute)}
+.auth-tab.on{background:var(--gg3);border-color:rgba(111,191,60,.45);color:#e2f7c8}
+.auth-form{display:flex;flex-direction:column;gap:10px}
+.auth-field{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mute)}
+.auth-field input{min-height:46px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:#0f160f;color:var(--ink);outline:none;font:inherit;font-weight:600;letter-spacing:0;text-transform:none}
+.auth-field input:focus{border-color:var(--gg);box-shadow:0 0 0 3px var(--gg3)}
+.auth-note{font-size:12px;color:var(--mute);line-height:1.4}
+.btn-logout{min-height:44px;border-radius:999px;border:1px solid var(--line);font-weight:650;color:var(--mute)}
+.btn-logout:hover{border-color:#ff8f8f;color:#ff8f8f}
+.modal{position:fixed;inset:0;z-index:300;display:flex;align-items:flex-end;justify-content:center}
+.modal[hidden]{display:none!important}
+.modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55)}
+.modal-sheet{position:relative;z-index:1;width:min(420px,100%);background:var(--panel);border:1px solid var(--line);border-radius:20px 20px 0 0;padding:18px 16px calc(18px + var(--safe-b));display:flex;flex-direction:column;box-shadow:var(--shadow);animation:up .3s var(--ease)}
+.modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+.modal-x{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.06);font-weight:700}
+@media (min-width:768px){
+  .modal{align-items:center}
+  .modal-sheet{border-radius:20px;padding-bottom:18px}
+}

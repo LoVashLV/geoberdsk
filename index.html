@@ -12,13 +12,14 @@
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<link rel="stylesheet" href="css/app.css?v=10">
+<link rel="stylesheet" href="css/app.css?v=11">
 </head>
 <body>
 <div class="fx" aria-hidden="true"><div class="fx-glow"></div><div class="fx-grid"></div></div>
 <div id="confetti-container"></div>
 
 <section id="screen-menu" class="screen active">
+<button type="button" id="btn-auth" class="auth-fab" aria-label="account">Войти</button>
 <div class="fx-orbs" aria-hidden="true">
 <span class="orb orb-a"></span>
 <span class="orb orb-b"></span>
@@ -31,15 +32,7 @@
 <p class="tag reveal" style="--d:.2s">Угадай улицу по панораме в городе - Бердск!</p>
 </header>
 
-<div id="reg-card" class="card reg-card reveal" style="--d:.28s">
-<p class="label">Регистрация</p>
-<p class="reg-lead">Придумай ник — он сохранится в этом браузере</p>
-<input id="input-reg-nick" maxlength="16" autocomplete="nickname" placeholder="Твой ник">
-<p id="reg-error" class="reg-error" hidden></p>
-<button type="button" id="btn-register" class="btn-reg">Создать аккаунт</button>
-</div>
-
-<div id="play-block" class="reveal" style="--d:.28s" hidden>
+<div id="play-block" class="reveal" style="--d:.28s">
 <div class="card play-card">
 <button type="button" class="mode-hero on" data-mode="classic" id="mode-hero">
 <span class="mode-hero-name" id="mode-hero-name">Классический</span>
@@ -51,7 +44,7 @@
 <button type="button" class="mode-mini" data-mode="marathon">Марафон</button>
 </div>
 <p class="play-sub" id="selected-mode-label">Выбран: Классический</p>
-<button type="button" id="btn-play" class="play" disabled>
+<button type="button" id="btn-play" class="play">
 <span class="play-shine" aria-hidden="true"></span>
 <span class="play-label">Играть</span>
 </button>
@@ -59,8 +52,8 @@
 
 <div class="card soft profile-slim">
 <div class="player-chip">
-<span class="player-chip-label">Игрок</span>
-<strong id="player-nick">—</strong>
+<span class="player-chip-label">Профиль</span>
+<strong id="player-nick">Гость</strong>
 </div>
 <div class="xp-head"><span id="player-level">Ур. 1</span><span id="player-level-name">Новичок</span></div>
 <div class="bar"><div id="xp-bar-fill" class="bar-fill" style="width:0%"></div></div>
@@ -68,7 +61,7 @@
 </div>
 </div>
 
-<div class="card soft lb-card reveal" style="--d:.4s">
+<div id="lb-card" class="card soft lb-card reveal" style="--d:.4s" hidden>
 <div class="lb-head">
 <p class="label">Лидеры</p>
 <div class="lb-tabs" id="lb-tabs" role="tablist">
@@ -82,12 +75,46 @@
 </div>
 </div>
 
+<p id="lb-locked" class="lb-locked reveal" style="--d:.4s">Таблица лидеров откроется после входа</p>
+
 <div class="links reveal" style="--d:.48s">
 <button type="button" id="btn-stats" class="link-btn">Статистика</button>
 </div>
 <p class="foot reveal" style="--d:.54s">GeoBerdsk · by Lovazh</p>
 </div>
 </section>
+
+<div id="auth-modal" class="modal" hidden>
+<div class="modal-backdrop" data-close-auth></div>
+<div class="modal-sheet auth-sheet" role="dialog" aria-labelledby="auth-title">
+<div class="modal-head">
+<p class="label" id="auth-title">Аккаунт</p>
+<button type="button" class="modal-x" data-close-auth aria-label="close">✕</button>
+</div>
+<div class="auth-tabs">
+<button type="button" class="auth-tab on" data-auth-tab="login">Вход</button>
+<button type="button" class="auth-tab" data-auth-tab="register">Регистрация</button>
+</div>
+<form id="auth-form" class="auth-form" autocomplete="on">
+<label class="auth-field" id="field-nick" hidden>
+<span>Ник</span>
+<input id="auth-nick" maxlength="16" autocomplete="nickname" placeholder="Как в таблице">
+</label>
+<label class="auth-field">
+<span>Почта</span>
+<input id="auth-email" type="email" autocomplete="email" required placeholder="you@mail.com">
+</label>
+<label class="auth-field">
+<span>Пароль</span>
+<input id="auth-password" type="password" autocomplete="current-password" required placeholder="••••••••" minlength="4">
+</label>
+<p id="auth-error" class="reg-error" hidden></p>
+<button type="submit" id="auth-submit" class="btn-reg">Войти</button>
+</form>
+<button type="button" id="btn-logout" class="btn-logout" hidden>Выйти из аккаунта</button>
+<p class="auth-note">Аккаунт хранится в этом браузере и остаётся после перезахода</p>
+</div>
+</div>
 
 <section id="screen-game" class="screen">
 <header class="hud">
@@ -184,6 +211,7 @@
 <script src="js/config.js"></script>
 <script src="js/locations.js"></script>
 <script src="js/storage.js"></script>
+<script src="js/auth.js"></script>
 <script src="js/xp.js"></script>
 <script src="js/panorama.js"></script>
 <script src="js/map.js"></script>
