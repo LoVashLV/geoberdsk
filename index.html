@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0E1A24">
+    <title>GeoBerdsk — угадай Бердск</title>
+    <meta name="description" content="Угадай место в Бердске по панораме. GeoGuessr по Новосибирской области.">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Unbounded:wght@600;700;800&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="bg" aria-hidden="true">
+        <div class="bg-sky"></div>
+        <div class="bg-topo"></div>
+        <div class="bg-glow"></div>
+    </div>
+    <div id="confetti-container"></div>
+
+    <!-- MENU -->
+    <section id="screen-menu" class="screen active">
+        <div class="menu">
+            <header class="menu-hero">
+                <p class="eyebrow">Бердск · НСО</p>
+                <h1 class="brand">
+                    <span class="brand-geo">Geo</span><span class="brand-city">Berdsk</span>
+                </h1>
+                <p class="lead">Смотри панораму — ставь метку на карте. Узнаешь город лучше, чем навигатор.</p>
+            </header>
+
+            <div class="progress-block">
+                <div class="progress-top">
+                    <span id="player-level" class="lvl">Ур. 1</span>
+                    <span id="player-level-name" class="lvl-name">Новичок</span>
+                </div>
+                <div class="xp-track" aria-hidden="true">
+                    <div id="xp-bar-fill" class="xp-fill" style="width:0%"></div>
+                </div>
+                <p id="xp-text" class="xp-caption">0 / 200 XP</p>
+            </div>
+
+            <div class="modes">
+                <button type="button" class="mode" data-mode="classic" id="btn-classic">
+                    <span class="mode-main">
+                        <span class="mode-title">Классика</span>
+                        <span class="mode-sub">5 раундов · без таймера</span>
+                    </span>
+                    <span class="mode-side">
+                        <span class="mode-rec-label">рекорд</span>
+                        <span id="record-classic" class="mode-rec">—</span>
+                    </span>
+                </button>
+                <button type="button" class="mode" data-mode="timeattack" id="btn-timeattack">
+                    <span class="mode-main">
+                        <span class="mode-title">На время</span>
+                        <span class="mode-sub">5 раундов · 30 сек</span>
+                    </span>
+                    <span class="mode-side">
+                        <span class="mode-rec-label">рекорд</span>
+                        <span id="record-timeattack" class="mode-rec">—</span>
+                    </span>
+                </button>
+                <button type="button" class="mode" data-mode="districts" id="btn-districts">
+                    <span class="mode-main">
+                        <span class="mode-title">Районы</span>
+                        <span class="mode-sub">Угадай микрорайон</span>
+                    </span>
+                    <span class="mode-side">
+                        <span class="mode-rec-label">рекорд</span>
+                        <span id="record-districts" class="mode-rec">—</span>
+                    </span>
+                </button>
+                <button type="button" class="mode" data-mode="marathon" id="btn-marathon">
+                    <span class="mode-main">
+                        <span class="mode-title">Марафон</span>
+                        <span class="mode-sub">Пока не промахнёшься</span>
+                    </span>
+                    <span class="mode-side">
+                        <span class="mode-rec-label">рекорд</span>
+                        <span id="record-marathon" class="mode-rec">—</span>
+                    </span>
+                </button>
+            </div>
+
+            <nav class="menu-nav">
+                <button type="button" id="btn-stats" class="nav-btn">Статистика</button>
+                <button type="button" id="btn-toggle-key" class="nav-btn quiet">Ключ API</button>
+            </nav>
+
+            <div id="api-key-panel" class="key-panel" hidden>
+                <p class="key-title">Панорамы без названий улиц</p>
+                <p class="key-desc">
+                    Бесплатный ключ Яндекса.
+                    <a href="https://developer.tech.yandex.ru/services/" target="_blank" rel="noopener">Получить</a>
+                    → «JavaScript API и HTTP Геокодер». В настройках ключа добавь домен сайта.
+                </p>
+                <div class="key-row">
+                    <input id="input-api-key" class="key-input" type="password" autocomplete="off"
+                           placeholder="API-ключ" spellcheck="false">
+                    <button type="button" id="btn-save-api-key" class="key-save">OK</button>
+                </div>
+                <p id="api-key-status" class="key-status"></p>
+            </div>
+        </div>
+    </section>
+
+    <!-- GAME -->
+    <section id="screen-game" class="screen">
+        <header class="hud">
+            <button type="button" class="hud-x" data-action="menu" aria-label="Меню">←</button>
+            <div class="hud-mid">
+                <span id="hud-mode" class="hud-pill">Классика</span>
+                <span id="hud-round" class="hud-pill">1 / 5</span>
+                <span id="hud-streak" class="hud-pill streak" hidden>Серия ×2</span>
+            </div>
+            <div class="hud-end">
+                <div id="hud-timer" class="hud-timer" style="display:none">
+                    <span id="hud-timer-value">30</span>
+                    <div class="timer-track"><div id="timer-bar-fill" class="timer-fill" style="width:100%"></div></div>
+                </div>
+                <span id="hud-score" class="hud-score">0</span>
+            </div>
+        </header>
+
+        <div class="panorama-area">
+            <div id="panorama-container">
+                <div class="panorama-loading">
+                    <div class="spinner"></div>
+                    <span>Загрузка панорамы…</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="map-guess-area" class="sheet">
+            <button type="button" id="btn-toggle-map" class="sheet-handle" aria-label="Открыть карту">
+                <span class="sheet-grip"></span>
+                <span class="sheet-handle-text">Карта · поставь метку</span>
+            </button>
+            <div class="sheet-body">
+                <div class="map-wrapper">
+                    <div id="guess-map"></div>
+                </div>
+                <button type="button" id="btn-guess" class="btn-guess" disabled>Угадать</button>
+            </div>
+        </div>
+
+        <div id="district-choices" class="districts" style="display:none"></div>
+
+        <div id="round-result-overlay" class="result-layer">
+            <div class="result-panel">
+                <p id="result-title" class="result-title">Идеально</p>
+                <p id="result-distance" class="result-dist">42 м</p>
+                <div class="result-row">
+                    <div>
+                        <div id="result-score" class="result-num">+4800</div>
+                        <div class="result-cap">очки</div>
+                    </div>
+                    <div>
+                        <div id="result-xp" class="result-num">+110 XP</div>
+                        <div class="result-cap">опыт</div>
+                    </div>
+                </div>
+                <p id="result-location-name" class="result-place">Преображенский собор</p>
+                <p id="result-streak-info" class="result-streak" hidden></p>
+                <button type="button" id="btn-next-round" class="btn-cta">Далее</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- SUMMARY -->
+    <section id="screen-summary" class="screen">
+        <div class="panel">
+            <p class="eyebrow" id="summary-mode">Классика</p>
+            <h2 class="panel-h">Итоги</h2>
+
+            <div class="score-hero">
+                <div id="summary-score" class="score-big">0</div>
+                <div class="score-unit">очков</div>
+                <div class="badges">
+                    <span id="summary-new-record" class="badge" hidden>Новый рекорд</span>
+                    <span id="summary-perfect" class="badge" hidden>Идеальная игра</span>
+                </div>
+            </div>
+
+            <div class="metrics three">
+                <div class="metric">
+                    <div id="summary-rounds" class="metric-v">5</div>
+                    <div class="metric-l">Раундов</div>
+                </div>
+                <div class="metric">
+                    <div id="summary-avg-distance" class="metric-v">—</div>
+                    <div class="metric-l">Ср. расстояние</div>
+                </div>
+                <div class="metric">
+                    <div id="summary-streak" class="metric-v">0</div>
+                    <div class="metric-l">Серия</div>
+                </div>
+            </div>
+
+            <div class="xp-block">
+                <p id="summary-level-up" class="level-up" hidden></p>
+                <div class="xp-block-top">
+                    <span id="summary-xp" class="xp-plus">+0 XP</span>
+                    <span id="summary-level-text" class="xp-lvl"></span>
+                </div>
+                <div class="xp-track">
+                    <div id="summary-xp-bar-fill" class="xp-fill" style="width:0%"></div>
+                </div>
+                <div id="summary-xp-breakdown" class="xp-list"></div>
+            </div>
+
+            <div class="detail-block">
+                <p class="detail-h">Раунды</p>
+                <div id="summary-rounds-detail" class="detail-list"></div>
+            </div>
+
+            <div class="actions">
+                <button type="button" id="btn-play-again" class="btn-cta">Ещё раз</button>
+                <button type="button" class="btn-ghost" data-action="menu">В меню</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- STATS -->
+    <section id="screen-stats" class="screen">
+        <div class="panel">
+            <div class="panel-top">
+                <h2 class="panel-h">Статистика</h2>
+                <button type="button" class="nav-btn" data-action="menu">Назад</button>
+            </div>
+
+            <div class="detail-block">
+                <p class="detail-h">Уровень</p>
+                <div class="stats-lvl-row">
+                    <span id="stats-level"></span>
+                    <span id="stats-xp-total"></span>
+                </div>
+            </div>
+
+            <div class="metrics two">
+                <div class="metric">
+                    <div id="stats-games" class="metric-v">0</div>
+                    <div class="metric-l">Игр</div>
+                </div>
+                <div class="metric">
+                    <div id="stats-rounds" class="metric-v">0</div>
+                    <div class="metric-l">Раундов</div>
+                </div>
+                <div class="metric">
+                    <div id="stats-perfect" class="metric-v">0</div>
+                    <div class="metric-l">Идеальных</div>
+                </div>
+                <div class="metric">
+                    <div id="stats-streak" class="metric-v">0</div>
+                    <div class="metric-l">Лучшая серия</div>
+                </div>
+            </div>
+
+            <div class="detail-block">
+                <p class="detail-h">История</p>
+                <div id="stats-history">
+                    <p class="muted">Пока нет сыгранных партий</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <script src="js/config.js"></script>
+    <script src="js/locations.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/xp.js"></script>
+    <script src="js/panorama.js"></script>
+    <script src="js/map.js"></script>
+    <script src="js/game.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
