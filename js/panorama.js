@@ -1,9 +1,7 @@
 /**
- * GeoBerdsk — Panorama Manager
- *
- * Улицы скрываются только в официальном JS API-плеере:
- * controls: [] (без panoramaName), getName→'', getMarkers→[].
- * Iframe всегда спойлерит адреса — при наличии ключа iframe НЕ используем.
+ * GeoBerdsk — Panorama
+ * Скрываем адреса (setMarkers) и «Открыть в Яндекс.Картах» (CSS + suppressMapOpenBlock).
+ * moveMode: free | look | fixed
  */
 window.GeoBerdsk = window.GeoBerdsk || {};
 
@@ -12,6 +10,9 @@ GeoBerdsk.Panorama = (function() {
     let spoilerObserver = null;
     let stylesInjected = false;
     let usedApi = false;
+    let moveMode = 'free';
+    let lockedDirection = null;
+    let directionLockHandler = null;
 
     function init() {
         ensureSpoilerStyles();
@@ -25,7 +26,6 @@ GeoBerdsk.Panorama = (function() {
         timeoutMs = timeoutMs || 15000;
         return new Promise((resolve) => {
             const start = Date.now();
-
             function tryReady() {
                 if (typeof ymaps !== 'undefined') {
                     try {
@@ -42,14 +42,14 @@ GeoBerdsk.Panorama = (function() {
                 }
                 setTimeout(tryReady, 120);
             }
-
             tryReady();
         });
     }
 
-    async function load(containerId, lat, lng) {
+    async function load(containerId, lat, lng, options) {
         destroy();
         usedApi = false;
+        moveMode = (options && options.moveMode) || 'free';
 
         const container = document.getElementById(containerId);
         if (!container) return false;
@@ -58,19 +58,12 @@ GeoBerdsk.Panorama = (function() {
         const key = getApiKey();
         if (!key) {
             console.warn('GeoBerdsk: no API key');
-            return loadIframe(container, lat, lng);
+            return false;
         }
 
         const ready = await ensureYmaps(15000);
-        if (!ready) {
-            console.warn('GeoBerdsk: ymaps not available');
-            return false;
-        }
-
-        if (ymaps.panorama.isSupported && !ymaps.panorama.isSupported()) {
-            console.warn('GeoBerdsk: panorama not supported in this browser');
-            return false;
-        }
+        if (!ready) return false;
+        if (ymaps.panorama.isSupported && !ymaps.panorama.isSupported()) return false;
 
         const panorama = await locateWithApi(lat, lng);
         if (!panorama) return false;
@@ -79,7 +72,10 @@ GeoBerdsk.Panorama = (function() {
         if (!ok) return false;
 
         usedApi = true;
+        installMasks(container);
+        scrubSpoilers(container);
         startSpoilerWatch(container);
+        applyMoveMode();
         return true;
     }
 
@@ -88,7 +84,6 @@ GeoBerdsk.Panorama = (function() {
             const point = [lat, lng];
             const radii = [100, 300, 600, 1200];
             let i = 0;
-
             function next() {
                 if (i >= radii.length) {
                     resolve(null);
@@ -96,7 +91,6 @@ GeoBerdsk.Panorama = (function() {
                 }
                 const radius = radii[i++];
                 const timeout = setTimeout(() => next(), 4500);
-
                 try {
                     ymaps.panorama.locate(point, {
                         layer: 'yandex#panorama',
@@ -117,24 +111,41 @@ GeoBerdsk.Panorama = (function() {
                     resolve(null);
                 }
             }
-
             next();
         });
     }
 
-    function stripSpoilers(panorama) {
+    function stripPanorama(panorama) {
+        try {
+            if (typeof panorama.setMarkers === 'function') {
+                panorama.setMarkers([]);
+            }
+        } catch (e) { /* ignore */ }
+        try { panorama._markers = []; } catch (e) { /* ignore */ }
+
+        if (moveMode !== 'free') {
+            try {
+                if (typeof panorama.setConnectionArrows === 'function') {
+                    panorama.setConnectionArrows([]);
+                }
+            } catch (e) { /* ignore */ }
+            try { panorama._connectionArrows = []; } catch (e) { /* ignore */ }
+            try { panorama._connections = []; } catch (e) { /* ignore */ }
+        }
+
         try {
             return new Proxy(panorama, {
                 get(target, prop, receiver) {
-                    if (
-                        prop === 'getMarkers' ||
-                        prop === 'getHotspots' ||
-                        prop === 'getOrganizations'
-                    ) {
+                    if (prop === 'getMarkers' || prop === 'getHotspots' || prop === 'getOrganizations') {
                         return () => [];
                     }
-                    if (prop === 'getName') {
-                        return () => '';
+                    if (prop === 'getName') return () => '';
+                    if (moveMode !== 'free' && (
+                        prop === 'getConnectionMarkers' ||
+                        prop === 'getConnections' ||
+                        prop === 'getConnectionArrows'
+                    )) {
+                        return () => [];
                     }
                     const value = Reflect.get(target, prop, receiver);
                     return typeof value === 'function' ? value.bind(target) : value;
@@ -145,9 +156,25 @@ GeoBerdsk.Panorama = (function() {
         }
     }
 
+    function clearMarkersFromPlayer() {
+        if (!player) return;
+        try {
+            const pan = player.getPanorama();
+            if (!pan) return;
+            if (typeof pan.setMarkers === 'function') pan.setMarkers([]);
+            try { pan._markers = []; } catch (e) { /* ignore */ }
+            if (moveMode !== 'free') {
+                try {
+                    if (typeof pan.setConnectionArrows === 'function') pan.setConnectionArrows([]);
+                } catch (e) { /* ignore */ }
+                try { pan._connectionArrows = []; } catch (e) { /* ignore */ }
+            }
+        } catch (e) { /* ignore */ }
+    }
+
     function createApiPlayer(containerId, panorama) {
         try {
-            const clean = stripSpoilers(panorama);
+            const clean = stripPanorama(panorama);
             player = new ymaps.panorama.Player(containerId, clean, {
                 direction: [Math.random() * 360, 0],
                 span: [120, 60],
@@ -156,12 +183,28 @@ GeoBerdsk.Panorama = (function() {
                 hotkeysEnabled: false,
             });
 
+            clearMarkersFromPlayer();
+
             try {
-                player.events.add('panoramachange', () => {
-                    const el = document.getElementById(containerId);
-                    if (el) startSpoilerWatch(el);
-                });
-            } catch (e) { /* ignore */ }
+                lockedDirection = player.getDirection ? player.getDirection() : null;
+            } catch (e) {
+                lockedDirection = null;
+            }
+
+            player.events.add('panoramachange', () => {
+                clearMarkersFromPlayer();
+                const el = document.getElementById(containerId);
+                if (el) scrubSpoilers(el);
+                if (moveMode === 'look' || moveMode === 'fixed') {
+                    // при попытке смены точки — вернуть назад нельзя через API легко;
+                    // стрелки уже убраны
+                    clearMarkersFromPlayer();
+                }
+            });
+
+            player.events.add(['markerexpand', 'markercreate'], () => {
+                clearMarkersFromPlayer();
+            });
 
             return true;
         } catch (e) {
@@ -171,48 +214,79 @@ GeoBerdsk.Panorama = (function() {
         }
     }
 
-    function loadIframe(container, lat, lng) {
-        return new Promise((resolve) => {
-            const direction = Math.floor(Math.random() * 360);
-            const point = encodeURIComponent(lng + ',' + lat);
-            const ll = encodeURIComponent(lng + ',' + lat);
+    function applyMoveMode() {
+        removeDirectionLock();
+        const area = document.querySelector('.panorama-area');
+        if (area) {
+            area.classList.toggle('pano-fixed', moveMode === 'fixed');
+            area.classList.toggle('pano-look', moveMode === 'look');
+        }
 
-            const shell = document.createElement('div');
-            shell.className = 'panorama-shell';
+        if (moveMode !== 'fixed' || !player) return;
 
-            const iframe = document.createElement('iframe');
-            iframe.className = 'panorama-iframe';
-            iframe.title = 'Панорама Бердска';
-            iframe.setAttribute('allowfullscreen', 'true');
-            iframe.src =
-                'https://yandex.ru/map-widget/v1/?ll=' + ll +
-                '&z=17&l=stv' +
-                '&panorama%5Bpoint%5D=' + point +
-                '&panorama%5Bdirection%5D=' + direction + '%2C0' +
-                '&panorama%5Bspan%5D=120%2C60';
+        directionLockHandler = function() {
+            if (!player || !lockedDirection) return;
+            try {
+                player.setDirection(lockedDirection);
+            } catch (e) { /* ignore */ }
+        };
 
-            const masks = document.createElement('div');
-            masks.className = 'panorama-spoiler-masks';
-            masks.setAttribute('aria-hidden', 'true');
-            masks.innerHTML =
-                '<div class="pano-mask pano-mask-top"></div>' +
-                '<div class="pano-mask pano-mask-top-right"></div>' +
-                '<div class="pano-mask pano-mask-bottom"></div>' +
-                '<div class="pano-mask pano-mask-bottom-right"></div>';
+        try {
+            player.events.add('directionchange', directionLockHandler);
+        } catch (e) { /* ignore */ }
+    }
 
-            shell.appendChild(iframe);
-            shell.appendChild(masks);
-            container.appendChild(shell);
+    function removeDirectionLock() {
+        if (player && directionLockHandler) {
+            try { player.events.remove('directionchange', directionLockHandler); } catch (e) { /* ignore */ }
+        }
+        directionLockHandler = null;
+        const area = document.querySelector('.panorama-area');
+        if (area) area.classList.remove('pano-fixed', 'pano-look');
+    }
 
-            let settled = false;
-            const finish = (ok) => {
-                if (settled) return;
-                settled = true;
-                resolve(ok);
-            };
-            iframe.onload = () => finish(true);
-            iframe.onerror = () => finish(false);
-            setTimeout(() => finish(true), 2500);
+    function installMasks(container) {
+        if (!container || container.querySelector('.pano-api-masks')) return;
+        const masks = document.createElement('div');
+        masks.className = 'pano-api-masks';
+        masks.setAttribute('aria-hidden', 'true');
+        masks.innerHTML =
+            '<div class="pano-mask pano-mask-bl"></div>' +
+            '<div class="pano-mask pano-mask-br"></div>' +
+            '<div class="pano-mask pano-mask-tl"></div>';
+        container.style.position = 'relative';
+        container.appendChild(masks);
+    }
+
+    function scrubSpoilers(container) {
+        if (!container) return;
+        container.querySelectorAll('a[href*="yandex.ru/maps"], a[href*="maps.yandex"]').forEach(a => {
+            a.remove();
+        });
+        container.querySelectorAll('[class*="gotoymaps"], [class*="goto-ymaps"]').forEach(el => el.remove());
+        const killSel = [
+            '[class*="map-open"]',
+            '[class*="open-map"]',
+            '[class*="gotoymaps"]',
+            '[class*="goto-ymaps"]',
+            '[class*="inception"]',
+            '[class*="gototext"]',
+            '[class*="panorama-name"]',
+            '[class*="panoramaName"]',
+            '[class*="copyright"]',
+            '[class*="marker"]',
+            '[class*="hotspot"]',
+            '[class*="placemark"]',
+            '[class*="organization"]',
+        ].join(',');
+        container.querySelectorAll(killSel).forEach(el => {
+            if (el.querySelector && el.querySelector('canvas')) return;
+            if (el.classList && el.classList.contains('pano-api-masks')) return;
+            if (el.classList && el.classList.contains('pano-mask')) return;
+            el.style.setProperty('display', 'none', 'important');
+            el.style.setProperty('visibility', 'hidden', 'important');
+            el.style.setProperty('pointer-events', 'none', 'important');
+            el.style.setProperty('opacity', '0', 'important');
         });
     }
 
@@ -230,7 +304,6 @@ GeoBerdsk.Panorama = (function() {
             ymaps[class*="gototext"],
             ymaps[class*="panorama-name"],
             ymaps[class*="control__name"],
-            ymaps[class*="control_name"],
             ymaps[class*="fullscreen"],
             ymaps[class*="marker"],
             ymaps[class*="hotspot"],
@@ -240,12 +313,30 @@ GeoBerdsk.Panorama = (function() {
             ymaps[class*="hint"],
             [class*="panorama-name"],
             [class*="panoramaName"],
-            [class*="panorama"][class*="marker"],
-            [class*="panorama"][class*="hotspot"] {
+            [class*="map-open"],
+            [class*="open-map"],
+            [class*="gotoymaps"],
+            [class*="goto-ymaps"],
+            [class*="inception"] {
                 display: none !important;
                 visibility: hidden !important;
                 opacity: 0 !important;
                 pointer-events: none !important;
+                width: 0 !important;
+                height: 0 !important;
+                overflow: hidden !important;
+            }
+            .pano-api-masks{position:absolute;inset:0;z-index:20;pointer-events:none}
+            .pano-mask{position:absolute;background:#050805;pointer-events:auto}
+            .pano-mask-bl{left:0;bottom:0;width:min(320px,70%);height:88px}
+            .pano-mask-br{right:0;bottom:0;width:120px;height:56px}
+            .pano-mask-tl{left:0;top:0;width:min(260px,55%);height:56px}
+            .panorama-area.pano-fixed #panorama-container > *:not(.pano-api-masks){
+                pointer-events:none!important;
+            }
+            .panorama-area.pano-look .ymaps-panorama-player [class*="connection"],
+            .panorama-area.pano-look .ymaps-panorama-player [class*="arrow"]{
+                display:none!important;
             }
         `;
         document.head.appendChild(style);
@@ -253,22 +344,14 @@ GeoBerdsk.Panorama = (function() {
 
     function startSpoilerWatch(container) {
         stopSpoilerWatch();
-        const kill = () => {
-            if (!container) return;
-            container.querySelectorAll('a[href*="yandex.ru/maps"], a[href*="maps.yandex"]').forEach(a => a.remove());
-            container.querySelectorAll(
-                '[class*="marker"], [class*="hotspot"], [class*="gototext"], [class*="panorama-name"], [class*="panoramaName"]'
-            ).forEach(el => {
-                if (el.querySelector && el.querySelector('canvas')) return;
-                el.style.setProperty('display', 'none', 'important');
-                el.style.setProperty('visibility', 'hidden', 'important');
-                el.style.setProperty('pointer-events', 'none', 'important');
-            });
+        const tick = () => {
+            scrubSpoilers(container);
+            clearMarkersFromPlayer();
         };
-        kill();
-        spoilerObserver = new MutationObserver(kill);
+        tick();
+        spoilerObserver = new MutationObserver(tick);
         spoilerObserver.observe(container, { childList: true, subtree: true });
-        [300, 800, 1600, 3000].forEach(ms => setTimeout(kill, ms));
+        [200, 600, 1200, 2500, 5000].forEach(ms => setTimeout(tick, ms));
     }
 
     function stopSpoilerWatch() {
@@ -279,17 +362,14 @@ GeoBerdsk.Panorama = (function() {
     }
 
     function destroy() {
+        removeDirectionLock();
         stopSpoilerWatch();
         if (player) {
             try { player.destroy(); } catch (e) { /* ignore */ }
             player = null;
         }
-        const container = document.getElementById('panorama-container');
-        if (container) {
-            const iframe = container.querySelector('iframe');
-            if (iframe) iframe.src = 'about:blank';
-        }
         usedApi = false;
+        lockedDirection = null;
     }
 
     function isAvailable() { return true; }

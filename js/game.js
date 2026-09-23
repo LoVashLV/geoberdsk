@@ -1,39 +1,14 @@
 /**
- * GeoBerdsk — Game Engine
+ * GeoBerdsk — Game Engine (custom rounds / time / move)
  */
 window.GeoBerdsk = window.GeoBerdsk || {};
 
 GeoBerdsk.Game = (function() {
-
-    const MODES = {
-        classic: {
-            id: 'classic',
-            name: 'Классический',
-            description: '5 раундов без таймера',
-            rounds: 5,
-            timeLimit: 0,
-        },
-        timeattack: {
-            id: 'timeattack',
-            name: 'На время',
-            description: '5 раундов · 30 секунд',
-            rounds: 5,
-            timeLimit: 30,
-        },
-        marathon: {
-            id: 'marathon',
-            name: 'Марафон',
-            description: 'Играй до ошибки (>500 м)',
-            rounds: Infinity,
-            timeLimit: 0,
-        },
-    };
-
     let state = createEmptyState();
     let onStateChange = null;
     let onTimerTick = null;
     let onTimeUp = null;
-    let lastModeId = 'classic';
+    let lastOptions = { rounds: 5, timeLimit: 0, moveMode: 'free' };
 
     function createEmptyState() {
         return {
@@ -54,24 +29,52 @@ GeoBerdsk.Game = (function() {
         };
     }
 
-    function startGame(modeId, callbacks) {
-        const mode = MODES[modeId];
-        if (!mode) throw new Error('Unknown mode: ' + modeId);
+    function normalizeOptions(options) {
+        const rounds = Math.max(5, Math.min(40, Number(options.rounds) || 5));
+        let timeLimit = Number(options.timeLimit);
+        if (!Number.isFinite(timeLimit) || timeLimit < 0) timeLimit = 0;
+        const moveMode = ['free', 'look', 'fixed'].includes(options.moveMode)
+            ? options.moveMode
+            : 'free';
+        return { rounds, timeLimit, moveMode };
+    }
 
-        lastModeId = modeId;
-        onStateChange = callbacks.onStateChange || null;
-        onTimerTick = callbacks.onTimerTick || null;
-        onTimeUp = callbacks.onTimeUp || null;
+    function buildMode(opts) {
+        const timeLabel = opts.timeLimit <= 0
+            ? 'без таймера'
+            : (opts.timeLimit < 60 ? opts.timeLimit + ' сек' : (opts.timeLimit / 60) + ' мин');
+        const moveLabel = {
+            free: 'движение',
+            look: 'только осмотр',
+            fixed: 'без осмотра',
+        }[opts.moveMode];
+        return {
+            id: 'custom',
+            name: 'Игра',
+            description: opts.rounds + ' раундов · ' + timeLabel + ' · ' + moveLabel,
+            rounds: opts.rounds,
+            timeLimit: opts.timeLimit,
+            moveMode: opts.moveMode,
+        };
+    }
+
+    function startGame(options, callbacks) {
+        const opts = normalizeOptions(options || lastOptions);
+        lastOptions = opts;
+
+        onStateChange = (callbacks && callbacks.onStateChange) || null;
+        onTimerTick = (callbacks && callbacks.onTimerTick) || null;
+        onTimeUp = (callbacks && callbacks.onTimeUp) || null;
 
         stopTimer();
 
-        const roundCount = mode.rounds === Infinity ? 50 : mode.rounds;
-        const locations = GeoBerdsk.getRandomLocations(roundCount);
+        const mode = buildMode(opts);
+        const locations = GeoBerdsk.getRandomLocations(opts.rounds);
 
         state = {
             mode: mode,
             currentRound: 0,
-            totalRounds: mode.rounds,
+            totalRounds: opts.rounds,
             locations: locations,
             currentLocation: null,
             rounds: [],
@@ -91,14 +94,8 @@ GeoBerdsk.Game = (function() {
 
     function nextRound() {
         if (!state.isActive) return null;
-
-        if (state.mode.rounds !== Infinity && state.currentRound >= state.mode.rounds) {
-            return null;
-        }
-
-        if (state.currentRound >= state.locations.length) {
-            return null;
-        }
+        if (state.currentRound >= state.mode.rounds) return null;
+        if (state.currentRound >= state.locations.length) return null;
 
         state.currentRound++;
         state.currentLocation = state.locations[state.currentRound - 1];
@@ -111,19 +108,27 @@ GeoBerdsk.Game = (function() {
         return state.currentLocation;
     }
 
-    /**
-     * Заменить текущую локацию (если нет панорамы) — раунд не сгорает
-     */
     function replaceCurrentLocation() {
         if (!state.isActive || !state.currentLocation) return null;
-
         const usedIds = state.locations.map(l => l.id);
         const replacement = GeoBerdsk.getUnusedLocation(usedIds);
         if (!replacement) return null;
-
         state.locations[state.currentRound - 1] = replacement;
         state.currentLocation = replacement;
         return replacement;
+    }
+
+    function calculateClassicScore(distance) {
+        if (distance < 25) return 5000;
+        if (distance > 5000) return 0;
+        return Math.round(5000 * Math.exp(-distance / 1500));
+    }
+
+    function calculateTimedScore(distance, timeLeft, timeLimit) {
+        const base = calculateClassicScore(distance);
+        if (timeLimit <= 0) return base;
+        const bonus = Math.round(base * 0.35 * (timeLeft / timeLimit));
+        return base + bonus;
     }
 
     function submitGuess(guessLat, guessLng) {
@@ -134,12 +139,9 @@ GeoBerdsk.Game = (function() {
             guessLat, guessLng, loc.lat, loc.lng
         );
 
-        let score;
-        if (state.mode.id === 'timeattack') {
-            score = calculateTimeAttackScore(distance, state.timeLeft, state.mode.timeLimit);
-        } else {
-            score = calculateClassicScore(distance);
-        }
+        let score = state.mode.timeLimit > 0
+            ? calculateTimedScore(distance, state.timeLeft, state.mode.timeLimit)
+            : calculateClassicScore(distance);
 
         const xpResult = GeoBerdsk.XP.calculateRoundXP(distance);
 
@@ -173,44 +175,6 @@ GeoBerdsk.Game = (function() {
         state.totalScore += score;
         state.totalXP += xpResult.xp;
 
-        if (state.mode.id === 'marathon' && distance > 500) {
-            state.isActive = false;
-            roundResult.marathonEnd = true;
-        }
-
-        emitStateChange('roundComplete');
-        return roundResult;
-    }
-
-    function submitDistrictGuess(districtId) {
-        const loc = state.currentLocation;
-        const correct = districtId === loc.district;
-        const score = correct ? 1000 : 0;
-        const xp = correct ? GeoBerdsk.XP.REWARDS.districtCorrect : 5;
-
-        if (correct) {
-            state.streak++;
-            if (state.streak > state.bestStreak) state.bestStreak = state.streak;
-        } else {
-            state.streak = 0;
-        }
-
-        const roundResult = {
-            round: state.currentRound,
-            location: loc,
-            guessedDistrict: districtId,
-            correctDistrict: loc.district,
-            correct,
-            score,
-            xp,
-            xpReasons: [{ text: correct ? 'Правильный район!' : 'Неверно', xp }],
-            streak: state.streak,
-        };
-
-        state.rounds.push(roundResult);
-        state.totalScore += score;
-        state.totalXP += xp;
-
         emitStateChange('roundComplete');
         return roundResult;
     }
@@ -220,12 +184,12 @@ GeoBerdsk.Game = (function() {
         state.isActive = false;
 
         const data = GeoBerdsk.Storage.load();
-        const modeId = state.mode ? state.mode.id : lastModeId;
         const roundCount = state.rounds.length;
+        const modeId = 'custom';
 
         if (!state.mode || roundCount === 0) {
             return {
-                mode: state.mode || MODES[modeId],
+                mode: state.mode || buildMode(lastOptions),
                 totalScore: 0,
                 rounds: [],
                 roundCount: 0,
@@ -239,29 +203,26 @@ GeoBerdsk.Game = (function() {
             };
         }
 
-        const isNewRecord = state.totalScore > (data.records[modeId] || 0);
-        const isPerfectGame = state.rounds.every(r =>
-            r.distance !== undefined ? r.distance < 200 : r.correct
-        );
+        const prevBest = data.records.classic || 0;
+        const isNewRecord = state.totalScore > prevBest;
+        const isPerfectGame = state.rounds.every(r => r.distance < 200);
 
         const bonusXP = GeoBerdsk.XP.calculateGameBonusXP({
             isNewRecord,
             isPerfectGame,
-            marathonRounds: modeId === 'marathon' ? state.currentRound : 0,
+            marathonRounds: 0,
         });
 
         state.totalXP += bonusXP.xp;
         const xpResult = GeoBerdsk.XP.addXP(state.totalXP);
 
         if (isNewRecord) {
-            data.records[modeId] = state.totalScore;
+            data.records.classic = state.totalScore;
         }
 
         data.player.gamesPlayed++;
         data.player.totalRounds += roundCount;
-        data.player.perfectHits += state.rounds.filter(r =>
-            r.distance !== undefined && r.distance < 50
-        ).length;
+        data.player.perfectHits += state.rounds.filter(r => r.distance < 50).length;
         if (state.bestStreak > data.player.bestStreak) {
             data.player.bestStreak = state.bestStreak;
         }
@@ -276,9 +237,11 @@ GeoBerdsk.Game = (function() {
             rounds: roundCount,
             xpEarned: state.totalXP,
             avgDistance,
+            label: state.mode.description,
         });
 
-        const summary = {
+        emitStateChange('gameEnded');
+        return {
             mode: state.mode,
             totalScore: state.totalScore,
             rounds: state.rounds,
@@ -291,49 +254,24 @@ GeoBerdsk.Game = (function() {
             streak: state.bestStreak,
             avgDistance,
         };
-
-        emitStateChange('gameEnded');
-        return summary;
-    }
-
-    function getState() {
-        return { ...state };
-    }
-
-    function getLastModeId() {
-        return lastModeId;
-    }
-
-    function hasMoreRounds() {
-        if (!state.isActive) return false;
-        if (state.mode.rounds === Infinity) return true;
-        return state.currentRound < state.mode.rounds;
-    }
-
-    function calculateClassicScore(distanceMeters) {
-        if (distanceMeters < 10) return 5000;
-        if (distanceMeters > 5000) return 0;
-        return Math.round(Math.max(0, 5000 * Math.exp(-distanceMeters / 800)));
-    }
-
-    function calculateTimeAttackScore(distanceMeters, timeLeft, timeLimit) {
-        const baseScore = calculateClassicScore(distanceMeters);
-        const timeBonus = 1 + (timeLeft / timeLimit);
-        return Math.round(baseScore * timeBonus);
     }
 
     function startTimer(seconds) {
         stopTimer();
         state.timeLeft = seconds;
+        if (onTimerTick) onTimerTick(state.timeLeft);
 
         state.timerInterval = setInterval(() => {
-            state.timeLeft = Math.max(0, state.timeLeft - 0.1);
-            if (onTimerTick) onTimerTick(state.timeLeft);
-
+            if (state.isPaused) return;
+            state.timeLeft -= 0.1;
             if (state.timeLeft <= 0) {
+                state.timeLeft = 0;
                 stopTimer();
+                if (onTimerTick) onTimerTick(0);
                 if (onTimeUp) onTimeUp();
+                return;
             }
+            if (onTimerTick) onTimerTick(state.timeLeft);
         }, 100);
     }
 
@@ -344,9 +282,28 @@ GeoBerdsk.Game = (function() {
         }
     }
 
-    function emitStateChange(event) {
-        if (onStateChange) onStateChange(event, state);
+    function emitStateChange(type) {
+        if (onStateChange) onStateChange(type, getState());
     }
+
+    function getState() {
+        return { ...state };
+    }
+
+    function getLastOptions() {
+        return { ...lastOptions };
+    }
+
+    function hasMoreRounds() {
+        if (!state.isActive) return false;
+        return state.currentRound < state.mode.rounds;
+    }
+
+    // Legacy stub for old UI bits
+    const MODES = {
+        custom: { id: 'custom', name: 'Игра' },
+        classic: { id: 'classic', name: 'Игра' },
+    };
 
     return {
         MODES,
@@ -354,10 +311,10 @@ GeoBerdsk.Game = (function() {
         nextRound,
         replaceCurrentLocation,
         submitGuess,
-        submitDistrictGuess,
         endGame,
         getState,
-        getLastModeId,
+        getLastOptions,
+        getLastModeId: () => 'custom',
         hasMoreRounds,
     };
 })();

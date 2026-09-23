@@ -6,25 +6,37 @@ window.GeoBerdsk = window.GeoBerdsk || {};
 GeoBerdsk.App = (function() {
     const $ = id => document.getElementById(id);
 
+    const TIME_OPTIONS = [
+        { value: 0, label: '∞' },
+        { value: 10, label: '10с' },
+        { value: 15, label: '15с' },
+        { value: 20, label: '20с' },
+        { value: 30, label: '30с' },
+        { value: 40, label: '40с' },
+        { value: 60, label: '1м' },
+        { value: 120, label: '2м' },
+        { value: 180, label: '3м' },
+        { value: 240, label: '4м' },
+        { value: 300, label: '5м' },
+    ];
+
     let currentGuess = null;
     let panoramaRetries = 0;
     const MAX_PANORAMA_RETRIES = 8;
-    let lastModeId = 'classic';
-    let selectedModeId = 'classic';
     let submitting = false;
 
-    const MODE_COPY = {
-        classic: { name: 'Классический', desc: '5 раундов без таймера' },
-        timeattack: { name: 'На время', desc: '5 раундов · 30 секунд каждый' },
-        marathon: { name: 'Марафон', desc: 'Играй, пока не промахнёшься дальше 500 м' },
+    let settings = {
+        rounds: 5,
+        timeLimit: 0,
+        moveMode: 'free',
     };
 
     function init() {
         injectYandexScript().then(() => {
             GeoBerdsk.Panorama.init();
         });
-        selectedModeId = 'classic';
-        selectMode('classic');
+        buildTimeOptions();
+        syncSettingsUI();
         updatePlayerUI();
         bindEvents();
         showScreen('menu');
@@ -67,31 +79,82 @@ GeoBerdsk.App = (function() {
         }
     }
 
+    function buildTimeOptions() {
+        const row = $('time-options');
+        if (!row) return;
+        row.innerHTML = TIME_OPTIONS.map(opt =>
+            '<button type="button" class="time-chip' + (opt.value === settings.timeLimit ? ' on' : '') +
+            '" data-time="' + opt.value + '">' + opt.label + '</button>'
+        ).join('');
+    }
+
+    function formatTimeLabel(sec) {
+        if (!sec) return '∞';
+        if (sec < 60) return sec + ' сек';
+        return (sec / 60) + ' мин';
+    }
+
+    function syncSettingsUI() {
+        const roundsRange = $('rounds-range');
+        const roundsValue = $('rounds-value');
+        const timeValue = $('time-value');
+
+        if (roundsRange) roundsRange.value = String(settings.rounds);
+        if (roundsValue) roundsValue.textContent = String(settings.rounds);
+        if (timeValue) timeValue.textContent = formatTimeLabel(settings.timeLimit);
+
+        document.querySelectorAll('[data-time]').forEach(btn => {
+            btn.classList.toggle('on', Number(btn.getAttribute('data-time')) === settings.timeLimit);
+        });
+        document.querySelectorAll('[data-move]').forEach(btn => {
+            btn.classList.toggle('on', btn.getAttribute('data-move') === settings.moveMode);
+        });
+    }
+
+    function setRounds(n) {
+        settings.rounds = Math.max(5, Math.min(40, Number(n) || 5));
+        syncSettingsUI();
+    }
+
     function bindEvents() {
-        $('btn-play')?.addEventListener('click', () => {
-            startGame(selectedModeId || 'classic');
+        $('btn-play')?.addEventListener('click', () => startGame(settings));
+
+        $('rounds-range')?.addEventListener('input', (e) => setRounds(e.target.value));
+        $('rounds-minus')?.addEventListener('click', () => setRounds(settings.rounds - 1));
+        $('rounds-plus')?.addEventListener('click', () => setRounds(settings.rounds + 1));
+
+        $('time-options')?.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-time]');
+            if (!btn) return;
+            settings.timeLimit = Number(btn.getAttribute('data-time'));
+            syncSettingsUI();
         });
 
-        document.querySelectorAll('[data-mode]').forEach(btn => {
+        document.querySelectorAll('[data-move]').forEach(btn => {
             btn.addEventListener('click', () => {
-                selectMode(btn.getAttribute('data-mode'));
+                settings.moveMode = btn.getAttribute('data-move') || 'free';
+                syncSettingsUI();
             });
         });
 
-        $('btn-guess').addEventListener('click', submitGuess);
-        $('btn-next-round').addEventListener('click', goNextRound);
+        $('btn-guess')?.addEventListener('click', submitGuess);
+        $('btn-next-round')?.addEventListener('click', goNextRound);
 
         document.querySelectorAll('[data-action="menu"]').forEach(btn => {
             btn.addEventListener('click', returnToMenu);
         });
 
         $('btn-stats')?.addEventListener('click', () => {
-            updateStatsUI();
+            try {
+                updateStatsUI();
+            } catch (e) {
+                console.warn(e);
+            }
             showScreen('stats');
         });
 
         $('btn-play-again')?.addEventListener('click', () => {
-            startGame(GeoBerdsk.Game.getLastModeId() || lastModeId);
+            startGame(GeoBerdsk.Game.getLastOptions());
         });
 
         $('btn-toggle-map')?.addEventListener('click', toggleMiniMap);
@@ -111,42 +174,13 @@ GeoBerdsk.App = (function() {
                 updateSheetLabel();
             }
         });
-
-        $('district-choices')?.addEventListener('click', (e) => {
-            const btn = e.target.closest('[data-district]');
-            if (btn && !btn.disabled) submitDistrictGuess(btn.getAttribute('data-district'));
-        });
     }
 
-    function selectMode(modeId) {
-        if (!GeoBerdsk.Game.MODES[modeId]) return;
-        selectedModeId = modeId;
-
-        document.querySelectorAll('.mode-mini[data-mode]').forEach(btn => {
-            btn.classList.toggle('on', btn.getAttribute('data-mode') === modeId);
-        });
-
-        const hero = $('mode-hero');
-        if (hero) {
-            hero.classList.toggle('on', modeId === 'classic');
-            hero.setAttribute('data-mode', 'classic');
-        }
-        const nameEl = $('mode-hero-name');
-        const descEl = $('mode-hero-desc');
-        if (nameEl) nameEl.textContent = MODE_COPY.classic.name;
-        if (descEl) descEl.textContent = MODE_COPY.classic.desc;
-
-        const sel = $('selected-mode-label');
-        const copy = MODE_COPY[modeId] || MODE_COPY.classic;
-        if (sel) sel.textContent = 'Выбран: ' + copy.name;
-    }
-
-    async function startGame(modeId) {
-        lastModeId = modeId;
+    async function startGame(opts) {
         panoramaRetries = 0;
         submitting = false;
 
-        GeoBerdsk.Game.startGame(modeId, {
+        GeoBerdsk.Game.startGame(opts, {
             onStateChange: () => {},
             onTimerTick: handleTimerTick,
             onTimeUp: handleTimeUp,
@@ -154,14 +188,12 @@ GeoBerdsk.App = (function() {
 
         showScreen('game');
 
-        const isDistrict = modeId === 'districts';
-        $('district-choices').style.display = isDistrict ? 'flex' : 'none';
-        $('map-guess-area').style.display = isDistrict ? 'none' : 'flex';
-        $('map-guess-area').classList.remove('expanded', 'locked');
+        const mapArea = $('map-guess-area');
+        if (mapArea) {
+            mapArea.style.display = 'flex';
+            mapArea.classList.remove('expanded', 'locked');
+        }
         updateSheetLabel();
-
-        if (isDistrict) renderDistrictChoices();
-
         updateGameHUD();
         await loadNextRound();
     }
@@ -175,56 +207,51 @@ GeoBerdsk.App = (function() {
         }
 
         currentGuess = null;
+        GeoBerdsk.Map.reset();
+        GeoBerdsk.Map.setGuessMode(true, (lat, lng) => {
+            currentGuess = { lat, lng };
+            const guessBtn = $('btn-guess');
+            if (guessBtn) {
+                guessBtn.disabled = false;
+                guessBtn.classList.add('ready');
+            }
+        });
 
-        const modeId = GeoBerdsk.Game.getState().mode.id;
-        if (modeId !== 'districts') {
-            GeoBerdsk.Map.reset();
-            GeoBerdsk.Map.setGuessMode(true, (lat, lng) => {
-                currentGuess = { lat, lng };
-                $('btn-guess').disabled = false;
-                $('btn-guess').classList.add('ready');
-            });
-            $('btn-guess').disabled = true;
-            $('btn-guess').classList.remove('ready');
-            $('map-guess-area').classList.remove('locked');
-        } else {
-            enableDistrictButtons(true);
+        const guessBtn = $('btn-guess');
+        if (guessBtn) {
+            guessBtn.disabled = true;
+            guessBtn.classList.remove('ready');
         }
+        $('map-guess-area')?.classList.remove('locked');
 
         showPanoramaLoading('Загрузка панорамы…');
         updateGameHUD();
-        $('round-result-overlay').classList.remove('visible');
+        $('round-result-overlay')?.classList.remove('visible');
         $('screen-game')?.classList.remove('showing-result');
 
+        const moveMode = GeoBerdsk.Game.getState().mode.moveMode || 'free';
         const loaded = await GeoBerdsk.Panorama.load(
             'panorama-container',
             location.lat,
-            location.lng
+            location.lng,
+            { moveMode }
         );
 
         if (!loaded) {
             panoramaRetries++;
-
             if (panoramaRetries <= MAX_PANORAMA_RETRIES) {
                 const replaced = GeoBerdsk.Game.replaceCurrentLocation();
                 if (replaced) {
                     showPanoramaLoading('Ищем другую точку…');
-                    const retry = await GeoBerdsk.Panorama.load(
-                        'panorama-container',
-                        replaced.lat,
-                        replaced.lng
-                    );
-                    if (retry) {
-                        panoramaRetries = 0;
-                        return;
-                    }
-                    // recursively try again without consuming a round
-                    setTimeout(() => retrySameRound(), 400);
+                    setTimeout(() => retrySameRound(), 200);
                     return;
                 }
             }
-
-            showHintFallback(location);
+            showPanoramaLoading('Панорама недоступна — следующий раунд…');
+            setTimeout(() => {
+                if (GeoBerdsk.Game.hasMoreRounds()) loadNextRound();
+                else finishGame();
+            }, 900);
         } else {
             panoramaRetries = 0;
         }
@@ -233,15 +260,16 @@ GeoBerdsk.App = (function() {
     async function retrySameRound() {
         const loc = GeoBerdsk.Game.getState().currentLocation;
         if (!loc) return;
-
         const replaced = GeoBerdsk.Game.replaceCurrentLocation();
         const target = replaced || loc;
+        const moveMode = GeoBerdsk.Game.getState().mode.moveMode || 'free';
 
         showPanoramaLoading('Ищем другую точку…');
         const loaded = await GeoBerdsk.Panorama.load(
             'panorama-container',
             target.lat,
-            target.lng
+            target.lng,
+            { moveMode }
         );
 
         if (loaded) {
@@ -251,40 +279,20 @@ GeoBerdsk.App = (function() {
 
         panoramaRetries++;
         if (panoramaRetries <= MAX_PANORAMA_RETRIES && replaced) {
-            setTimeout(() => retrySameRound(), 300);
+            setTimeout(() => retrySameRound(), 250);
             return;
         }
 
-        showHintFallback(target);
+        if (GeoBerdsk.Game.hasMoreRounds()) loadNextRound();
+        else finishGame();
     }
 
     function showPanoramaLoading(text) {
-        $('panorama-container').innerHTML =
-            `<div class="panorama-loading">
-                <div class="spinner"></div>
-                <span>${text}</span>
-            </div>`;
-    }
-
-    function showHintFallback(location) {
-        const district = GeoBerdsk.getDistrict(location.district);
-        const difficultyLabel = {
-            easy: 'Легко',
-            medium: 'Средне',
-            hard: 'Сложно',
-        };
-
-        $('panorama-container').innerHTML = `
-            <div class="hint-fallback">
-                <div class="hint-fallback-label">Панорама недоступна</div>
-                <p class="hint-fallback-lead">Угадайте по подсказке</p>
-                <p class="hint-fallback-hint">${escapeHtml(location.hint)}</p>
-                <p class="hint-fallback-meta">
-                    ${district ? escapeHtml(district.name) : ''}
-                    · ${difficultyLabel[location.difficulty] || ''}
-                </p>
-            </div>
-        `;
+        const box = $('panorama-container');
+        if (!box) return;
+        box.innerHTML =
+            '<div class="panorama-loading"><div class="spinner"></div><span>' +
+            escapeHtml(text) + '</span></div>';
     }
 
     function submitGuess() {
@@ -299,40 +307,18 @@ GeoBerdsk.App = (function() {
             result.location.lat, result.location.lng
         );
 
-        $('map-guess-area').classList.add('expanded', 'locked');
+        $('map-guess-area')?.classList.add('expanded', 'locked');
         GeoBerdsk.Map.invalidateSize();
-
         showRoundResult(result);
-    }
-
-    function submitDistrictGuess(districtId) {
-        if (submitting) return;
-        submitting = true;
-        enableDistrictButtons(false);
-
-        const result = GeoBerdsk.Game.submitDistrictGuess(districtId);
-        showRoundResult(result);
-    }
-
-    function enableDistrictButtons(enabled) {
-        document.querySelectorAll('#district-choices .district-btn').forEach(btn => {
-            btn.disabled = !enabled;
-        });
     }
 
     function goNextRound() {
-        if (GeoBerdsk.Game.hasMoreRounds()) {
-            loadNextRound();
-        } else {
-            finishGame();
-        }
+        if (GeoBerdsk.Game.hasMoreRounds()) loadNextRound();
+        else finishGame();
     }
 
     function finishGame() {
         const summary = GeoBerdsk.Game.endGame();
-        if (summary && summary.mode && summary.mode.id) {
-            selectedModeId = summary.mode.id;
-        }
         GeoBerdsk.Panorama.destroy();
         showGameSummary(summary);
         updatePlayerUI();
@@ -351,7 +337,6 @@ GeoBerdsk.App = (function() {
     function updatePlayerUI() {
         const data = GeoBerdsk.Storage.load();
         const info = GeoBerdsk.XP.getLevelInfo(data.player.xp);
-
         const levelBadge = $('player-level');
         const levelName = $('player-level-name');
         const xpBar = $('xp-bar-fill');
@@ -365,17 +350,6 @@ GeoBerdsk.App = (function() {
                 ? data.player.xp + ' XP · максимум'
                 : data.player.xp + ' / ' + info.xpForNext + ' XP';
         }
-
-        setRecord('record-classic', data.records.classic);
-        setRecord('record-timeattack', data.records.timeattack);
-        setRecord('record-districts', data.records.districts);
-        setRecord('record-marathon', data.records.marathon);
-    }
-
-    function setRecord(id, value) {
-        const el = $(id);
-        if (!el) return;
-        el.textContent = value ? value.toLocaleString('ru-RU') : '—';
     }
 
     function updateGameHUD() {
@@ -389,9 +363,7 @@ GeoBerdsk.App = (function() {
         const streakEl = $('hud-streak');
 
         if (roundEl) {
-            roundEl.textContent = state.mode.rounds === Infinity
-                ? 'Раунд ' + state.currentRound
-                : state.currentRound + ' / ' + state.mode.rounds;
+            roundEl.textContent = state.currentRound + ' / ' + state.mode.rounds;
         }
         if (scoreEl) scoreEl.textContent = state.totalScore.toLocaleString('ru-RU');
         if (modeEl) modeEl.textContent = state.mode.name;
@@ -412,10 +384,9 @@ GeoBerdsk.App = (function() {
 
     function showRoundResult(result) {
         const overlay = $('round-result-overlay');
-        overlay.classList.add('visible');
+        overlay?.classList.add('visible');
         $('screen-game')?.classList.add('showing-result');
 
-        const isDistrict = GeoBerdsk.Game.getState().mode.id === 'districts';
         const resultTitle = $('result-title');
         const resultDistance = $('result-distance');
         const resultScore = $('result-score');
@@ -423,38 +394,26 @@ GeoBerdsk.App = (function() {
         const resultLocationName = $('result-location-name');
         const resultStreak = $('result-streak-info');
 
-        if (isDistrict) {
-            const correctDistrict = GeoBerdsk.getDistrict(result.correctDistrict);
-            if (result.correct) {
-                resultTitle.textContent = 'Верно';
-                resultTitle.className = 'result-title success';
-            } else {
-                resultTitle.textContent = 'Неверно';
-                resultTitle.className = 'result-title fail';
-            }
-            resultDistance.textContent = correctDistrict ? correctDistrict.name : '';
+        const dist = result.distance;
+        if (dist < 50) {
+            resultTitle.textContent = 'Идеально';
+            resultTitle.className = 'result-title perfect';
+            spawnConfetti();
+        } else if (dist < 200) {
+            resultTitle.textContent = 'Отлично';
+            resultTitle.className = 'result-title great';
+        } else if (dist < 500) {
+            resultTitle.textContent = 'Хорошо';
+            resultTitle.className = 'result-title good';
+        } else if (dist < 1000) {
+            resultTitle.textContent = 'Неплохо';
+            resultTitle.className = 'result-title ok';
         } else {
-            const dist = result.distance;
-            if (dist < 50) {
-                resultTitle.textContent = 'Идеально';
-                resultTitle.className = 'result-title perfect';
-                spawnConfetti();
-            } else if (dist < 200) {
-                resultTitle.textContent = 'Отлично';
-                resultTitle.className = 'result-title great';
-            } else if (dist < 500) {
-                resultTitle.textContent = 'Хорошо';
-                resultTitle.className = 'result-title good';
-            } else if (dist < 1000) {
-                resultTitle.textContent = 'Неплохо';
-                resultTitle.className = 'result-title ok';
-            } else {
-                resultTitle.textContent = 'Далековато';
-                resultTitle.className = 'result-title miss';
-            }
-            resultDistance.textContent = formatDistance(dist);
+            resultTitle.textContent = 'Далековато';
+            resultTitle.className = 'result-title miss';
         }
 
+        if (resultDistance) resultDistance.textContent = formatDistance(dist);
         if (resultScore) resultScore.textContent = '+' + result.score.toLocaleString('ru-RU');
         if (resultXP) resultXP.textContent = '+' + result.xp + ' XP';
         if (resultLocationName) resultLocationName.textContent = result.location.name;
@@ -469,12 +428,9 @@ GeoBerdsk.App = (function() {
             }
         }
 
-        if (result.marathonEnd) {
-            $('btn-next-round').textContent = 'Результаты';
-        } else {
-            $('btn-next-round').textContent = GeoBerdsk.Game.hasMoreRounds()
-                ? 'Далее'
-                : 'Результаты';
+        const nextBtn = $('btn-next-round');
+        if (nextBtn) {
+            nextBtn.textContent = GeoBerdsk.Game.hasMoreRounds() ? 'Далее' : 'Результаты';
         }
 
         updateGameHUD();
@@ -483,28 +439,27 @@ GeoBerdsk.App = (function() {
     function showGameSummary(summary) {
         showScreen('summary');
 
-        $('summary-mode').textContent = summary.mode.name;
-        $('summary-score').textContent = summary.totalScore.toLocaleString('ru-RU');
-        $('summary-rounds').textContent = summary.roundCount;
-        $('summary-xp').textContent = '+' + summary.totalXP + ' XP';
+        if ($('summary-mode')) $('summary-mode').textContent = summary.mode.description || summary.mode.name;
+        if ($('summary-score')) $('summary-score').textContent = summary.totalScore.toLocaleString('ru-RU');
+        if ($('summary-rounds')) $('summary-rounds').textContent = summary.roundCount;
+        if ($('summary-xp')) $('summary-xp').textContent = '+' + summary.totalXP + ' XP';
 
         if (summary.avgDistance !== undefined && !isNaN(summary.avgDistance)) {
             $('summary-avg-distance').textContent = formatDistance(summary.avgDistance);
-        } else {
+        } else if ($('summary-avg-distance')) {
             $('summary-avg-distance').textContent = '—';
         }
 
-        $('summary-streak').textContent = summary.streak || 0;
+        if ($('summary-streak')) $('summary-streak').textContent = summary.streak || 0;
 
         const recordBadge = $('summary-new-record');
         if (recordBadge) recordBadge.hidden = !summary.isNewRecord;
-
         const perfectBadge = $('summary-perfect');
         if (perfectBadge) perfectBadge.hidden = !summary.isPerfectGame;
 
         const levelUpEl = $('summary-level-up');
         if (levelUpEl) {
-            if (summary.xpResult.leveledUp) {
+            if (summary.xpResult && summary.xpResult.leveledUp) {
                 levelUpEl.hidden = false;
                 levelUpEl.textContent = 'Новый уровень — ' + summary.xpResult.newLevel.name;
             } else {
@@ -514,23 +469,20 @@ GeoBerdsk.App = (function() {
 
         const breakdownEl = $('summary-xp-breakdown');
         if (breakdownEl) {
-            breakdownEl.innerHTML = (summary.bonusXP.reasons || []).map(r =>
-                `<div class="xp-reason"><span>${escapeHtml(r.text)}</span><span class="xp-value">+${r.xp}</span></div>`
+            breakdownEl.innerHTML = ((summary.bonusXP && summary.bonusXP.reasons) || []).map(r =>
+                '<div class="xp-reason"><span>' + escapeHtml(r.text) +
+                '</span><span class="xp-value">+' + r.xp + '</span></div>'
             ).join('');
         }
 
         const roundsEl = $('summary-rounds-detail');
         if (roundsEl) {
             roundsEl.innerHTML = summary.rounds.map((r, i) => {
-                const distText = r.distance !== undefined
-                    ? formatDistance(r.distance)
-                    : (r.correct ? 'верно' : 'мимо');
-                return `<div class="round-detail-row">
-                    <span class="round-num">${i + 1}</span>
-                    <span class="round-name">${escapeHtml(r.location.name)}</span>
-                    <span class="round-dist">${distText}</span>
-                    <span class="round-score">+${r.score}</span>
-                </div>`;
+                return '<div class="round-detail-row">' +
+                    '<span class="round-num">' + (i + 1) + '</span>' +
+                    '<span class="round-name">' + escapeHtml(r.location.name) + '</span>' +
+                    '<span class="round-dist">' + formatDistance(r.distance) + '</span>' +
+                    '<span class="round-score">+' + r.score + '</span></div>';
             }).join('');
         }
 
@@ -552,39 +504,29 @@ GeoBerdsk.App = (function() {
         const data = GeoBerdsk.Storage.load();
         const info = GeoBerdsk.XP.getLevelInfo(data.player.xp);
 
-        $('stats-games').textContent = data.player.gamesPlayed;
-        $('stats-rounds').textContent = data.player.totalRounds;
-        $('stats-perfect').textContent = data.player.perfectHits;
-        $('stats-streak').textContent = data.player.bestStreak;
-        $('stats-xp-total').textContent = data.player.xp + ' XP';
-        $('stats-level').textContent = info.name + ' · ур. ' + info.level;
+        if ($('stats-games')) $('stats-games').textContent = data.player.gamesPlayed;
+        if ($('stats-rounds')) $('stats-rounds').textContent = data.player.totalRounds;
+        if ($('stats-perfect')) $('stats-perfect').textContent = data.player.perfectHits;
+        if ($('stats-streak')) $('stats-streak').textContent = data.player.bestStreak;
+        if ($('stats-xp-total')) $('stats-xp-total').textContent = data.player.xp + ' XP';
+        if ($('stats-level')) $('stats-level').textContent = info.name + ' · ур. ' + info.level;
 
         const historyEl = $('stats-history');
-        if (historyEl && data.history.length > 0) {
+        if (!historyEl) return;
+
+        if (data.history && data.history.length > 0) {
             historyEl.innerHTML = data.history.slice(0, 20).map(g => {
-                const mode = GeoBerdsk.Game.MODES[g.mode];
                 const date = new Date(g.timestamp).toLocaleDateString('ru-RU');
-                return `<div class="history-row">
-                    <span class="history-mode">${mode ? escapeHtml(mode.name) : 'Игра'}</span>
-                    <span>${date}</span>
-                    <span>${g.score.toLocaleString('ru-RU')}</span>
-                    <span>+${g.xpEarned} XP</span>
-                </div>`;
+                const label = g.label || 'Игра';
+                return '<div class="history-row">' +
+                    '<span class="history-mode">' + escapeHtml(label) + '</span>' +
+                    '<span>' + date + '</span>' +
+                    '<span>' + Number(g.score).toLocaleString('ru-RU') + '</span>' +
+                    '<span>+' + g.xpEarned + ' XP</span></div>';
             }).join('');
-        } else if (historyEl) {
-            historyEl.innerHTML = '<p class="text-muted">Пока нет сыгранных партий</p>';
+        } else {
+            historyEl.innerHTML = '<p class="muted">Пока нет сыгранных партий</p>';
         }
-    }
-
-    function renderDistrictChoices() {
-        const container = $('district-choices');
-        if (!container) return;
-
-        container.innerHTML = GeoBerdsk.DISTRICTS.map(d =>
-            `<button class="district-btn" data-district="${d.id}" style="--district-color: ${d.color}">
-                <span class="district-name">${escapeHtml(d.name)}</span>
-            </button>`
-        ).join('');
     }
 
     function handleTimerTick(timeLeft) {
@@ -594,7 +536,9 @@ GeoBerdsk.App = (function() {
         const timerBar = $('timer-bar-fill');
         if (timerBar) {
             const state = GeoBerdsk.Game.getState();
-            const pct = (timeLeft / state.mode.timeLimit) * 100;
+            const pct = state.mode.timeLimit > 0
+                ? (timeLeft / state.mode.timeLimit) * 100
+                : 0;
             timerBar.style.width = pct + '%';
             timerBar.classList.toggle('urgent', pct < 25);
             timerBar.classList.toggle('warn', pct >= 25 && pct < 50);
@@ -632,8 +576,7 @@ GeoBerdsk.App = (function() {
         const container = $('confetti-container');
         if (!container) return;
         container.innerHTML = '';
-
-        const colors = ['#6CBB3C', '#57A32E', '#8FD15A', '#FFFFFF', '#3D8B40', '#A8E063'];
+        const colors = ['#6FBF3C', '#4F9A28', '#8FD15A', '#FFFFFF', '#A8E063'];
         for (let i = 0; i < 48; i++) {
             const piece = document.createElement('div');
             piece.className = 'confetti-piece';
@@ -646,7 +589,6 @@ GeoBerdsk.App = (function() {
             piece.style.height = size * (0.4 + Math.random() * 0.6) + 'px';
             container.appendChild(piece);
         }
-
         setTimeout(() => { container.innerHTML = ''; }, 2800);
     }
 

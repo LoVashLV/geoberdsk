@@ -12,7 +12,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<link rel="stylesheet" href="css/app.css?v=12">
+<link rel="stylesheet" href="css/app.css?v=13">
 </head>
 <body>
 <div class="fx" aria-hidden="true"><div class="fx-glow"></div><div class="fx-grid"></div></div>
@@ -31,17 +31,38 @@
 <p class="tag reveal" style="--d:.2s">Угадай улицу по панораме в городе - Бердск!</p>
 </header>
 
-<div class="card play-card reveal" style="--d:.28s">
-<button type="button" class="mode-hero on" data-mode="classic" id="mode-hero">
-<span class="mode-hero-name" id="mode-hero-name">Классический</span>
-<span class="mode-hero-desc" id="mode-hero-desc">5 раундов без таймера</span>
-</button>
-<div class="mode-row" role="group" aria-label="modes">
-<button type="button" class="mode-mini on" data-mode="classic">Классика</button>
-<button type="button" class="mode-mini" data-mode="timeattack">На время</button>
-<button type="button" class="mode-mini" data-mode="marathon">Марафон</button>
+<div class="card settings-card reveal" style="--d:.28s">
+<div class="setting">
+<div class="setting-top">
+<span class="setting-label">Раунды</span>
+<strong id="rounds-value" class="setting-value">5</strong>
 </div>
-<p class="play-sub" id="selected-mode-label">Выбран: Классический</p>
+<div class="stepper">
+<button type="button" id="rounds-minus" class="step-btn" aria-label="less">−</button>
+<input type="range" id="rounds-range" min="5" max="40" value="5" step="1">
+<button type="button" id="rounds-plus" class="step-btn" aria-label="more">+</button>
+</div>
+</div>
+
+<div class="setting">
+<div class="setting-top">
+<span class="setting-label">Время на раунд</span>
+<strong id="time-value" class="setting-value">∞</strong>
+</div>
+<div id="time-options" class="chip-row" role="group" aria-label="time"></div>
+</div>
+
+<div class="setting">
+<div class="setting-top">
+<span class="setting-label">Панорама</span>
+</div>
+<div class="move-row" role="group" aria-label="move">
+<button type="button" class="move-btn on" data-move="free">Можно двигаться</button>
+<button type="button" class="move-btn" data-move="look">Нельзя двигаться</button>
+<button type="button" class="move-btn" data-move="fixed">Без движения и осмотра</button>
+</div>
+</div>
+
 <button type="button" id="btn-play" class="play">
 <span class="play-shine" aria-hidden="true"></span>
 <span class="play-label">Играть</span>
@@ -65,7 +86,7 @@
 <header class="hud">
 <button type="button" class="hud-x" data-action="menu" aria-label="menu">✕</button>
 <div class="hud-mid">
-<span id="hud-mode" class="chip">Классика</span>
+<span id="hud-mode" class="chip">Игра</span>
 <span id="hud-round" class="chip">1 / 5</span>
 <span id="hud-streak" class="chip hot" hidden>Серия ×2</span>
 </div>
@@ -90,7 +111,6 @@
 <button type="button" id="btn-guess" class="btn-guess" disabled>Угадать</button>
 </div>
 </div>
-<div id="district-choices" class="districts" style="display:none"></div>
 <div id="round-result-overlay" class="result-layer">
 <div class="result-panel">
 <p id="result-title" class="result-title">Идеально</p>
@@ -108,7 +128,7 @@
 
 <section id="screen-summary" class="screen">
 <div class="panel">
-<p class="by" id="summary-mode">Классика</p>
+<p class="by" id="summary-mode">Игра</p>
 <h2 class="panel-h">Итоги</h2>
 <div class="score-hero">
 <div id="summary-score" class="score-big">0</div>
@@ -129,7 +149,7 @@
 <div class="bar"><div id="summary-xp-bar-fill" class="bar-fill" style="width:0%"></div></div>
 <div id="summary-xp-breakdown" class="xp-list"></div>
 </div>
-<div class="detail-block"><p class="detail-h">Раундов</p><div id="summary-rounds-detail" class="detail-list"></div></div>
+<div class="detail-block"><p class="detail-h">Раунды</p><div id="summary-rounds-detail" class="detail-list"></div></div>
 <div class="actions">
 <button type="button" id="btn-play-again" class="btn-cta">Ещё раз</button>
 <button type="button" class="btn-ghost" data-action="menu">В меню</button>
