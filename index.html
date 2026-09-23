@@ -3,34 +3,73 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#F5C518">
+    <meta name="theme-color" content="#6CBB3C">
     <title>GeoBerdsk — угадай Бердск</title>
-    <meta name="description" content="Угадай место в Бердске по панораме. GeoGuessr по Новосибирской области.">
+    <meta name="description" content="GeoGuessr по Бердску от Lovazh. Угадай место по панораме.">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="author" content="Lovazh">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
 
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <div class="stage" aria-hidden="true">
-        <div class="stage-stripe stage-stripe-a"></div>
-        <div class="stage-stripe stage-stripe-b"></div>
-        <div class="stage-noise"></div>
+    <div class="world" aria-hidden="true">
+        <div class="world-grad"></div>
+        <div class="world-orb world-orb-1"></div>
+        <div class="world-orb world-orb-2"></div>
     </div>
     <div id="confetti-container"></div>
 
+    <!-- MENU -->
     <section id="screen-menu" class="screen active">
         <div class="menu">
             <header class="menu-hero">
-                <p class="stamp">Бердск · НСО</p>
-                <h1 class="brand">GEOBERDSK</h1>
-                <p class="lead">Панорама улицы. Метка на карте. Кто лучше знает город?</p>
+                <div class="logo-mark" aria-hidden="true">
+                    <svg viewBox="0 0 48 48" width="48" height="48" fill="none">
+                        <circle cx="24" cy="24" r="22" stroke="currentColor" stroke-width="3"/>
+                        <circle cx="24" cy="24" r="8" fill="currentColor"/>
+                        <path d="M24 2v8M24 38v8M2 24h8M38 24h8" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                    </svg>
+                </div>
+                <h1 class="brand">GeoBerdsk</h1>
+                <p class="byline">игра от <strong>Lovazh</strong></p>
+                <p class="lead">Угадай улицу Бердска по панораме — как в GeoGuessr, только свой город.</p>
             </header>
+
+            <div class="play-block">
+                <div class="mode-tabs" role="tablist" aria-label="Режим игры">
+                    <button type="button" class="mode-tab active" data-mode="classic" id="btn-classic" role="tab" aria-selected="true">
+                        Классика
+                        <span class="mode-tab-meta">5 раундов</span>
+                    </button>
+                    <button type="button" class="mode-tab" data-mode="timeattack" id="btn-timeattack" role="tab" aria-selected="false">
+                        На время
+                        <span class="mode-tab-meta">30 сек</span>
+                    </button>
+                    <button type="button" class="mode-tab" data-mode="districts" id="btn-districts" role="tab" aria-selected="false">
+                        Районы
+                        <span class="mode-tab-meta">микрорайон</span>
+                    </button>
+                    <button type="button" class="mode-tab" data-mode="marathon" id="btn-marathon" role="tab" aria-selected="false">
+                        Марафон
+                        <span class="mode-tab-meta">до ошибки</span>
+                    </button>
+                </div>
+
+                <button type="button" id="btn-play" class="btn-play">Играть</button>
+
+                <div class="records-row">
+                    <div class="rec"><span>Классика</span><b id="record-classic">—</b></div>
+                    <div class="rec"><span>Время</span><b id="record-timeattack">—</b></div>
+                    <div class="rec"><span>Районы</span><b id="record-districts">—</b></div>
+                    <div class="rec"><span>Марафон</span><b id="record-marathon">—</b></div>
+                </div>
+            </div>
 
             <div class="progress-block">
                 <div class="progress-top">
@@ -43,53 +82,6 @@
                 <p id="xp-text" class="xp-caption">0 / 200 XP</p>
             </div>
 
-            <div class="modes">
-                <button type="button" class="mode" data-mode="classic" id="btn-classic">
-                    <span class="mode-num">01</span>
-                    <span class="mode-main">
-                        <span class="mode-title">Классика</span>
-                        <span class="mode-sub">5 раундов · без таймера</span>
-                    </span>
-                    <span class="mode-side">
-                        <span class="mode-rec-label">рекорд</span>
-                        <span id="record-classic" class="mode-rec">—</span>
-                    </span>
-                </button>
-                <button type="button" class="mode" data-mode="timeattack" id="btn-timeattack">
-                    <span class="mode-num">02</span>
-                    <span class="mode-main">
-                        <span class="mode-title">На время</span>
-                        <span class="mode-sub">5 раундов · 30 сек</span>
-                    </span>
-                    <span class="mode-side">
-                        <span class="mode-rec-label">рекорд</span>
-                        <span id="record-timeattack" class="mode-rec">—</span>
-                    </span>
-                </button>
-                <button type="button" class="mode" data-mode="districts" id="btn-districts">
-                    <span class="mode-num">03</span>
-                    <span class="mode-main">
-                        <span class="mode-title">Районы</span>
-                        <span class="mode-sub">Угадай микрорайон</span>
-                    </span>
-                    <span class="mode-side">
-                        <span class="mode-rec-label">рекорд</span>
-                        <span id="record-districts" class="mode-rec">—</span>
-                    </span>
-                </button>
-                <button type="button" class="mode" data-mode="marathon" id="btn-marathon">
-                    <span class="mode-num">04</span>
-                    <span class="mode-main">
-                        <span class="mode-title">Марафон</span>
-                        <span class="mode-sub">Пока не промахнёшься</span>
-                    </span>
-                    <span class="mode-side">
-                        <span class="mode-rec-label">рекорд</span>
-                        <span id="record-marathon" class="mode-rec">—</span>
-                    </span>
-                </button>
-            </div>
-
             <nav class="menu-nav">
                 <button type="button" id="btn-stats" class="nav-btn">Статистика</button>
                 <button type="button" id="btn-toggle-key" class="nav-btn quiet">Ключ API</button>
@@ -100,7 +92,7 @@
                 <p class="key-desc">
                     Бесплатный ключ Яндекса.
                     <a href="https://developer.tech.yandex.ru/services/" target="_blank" rel="noopener">Получить</a>
-                    → «JavaScript API и HTTP Геокодер». В ограничениях добавь домен сайта.
+                    → «JavaScript API и HTTP Геокодер». Добавь домен <code>lovashlv.github.io</code>.
                 </p>
                 <div class="key-row">
                     <input id="input-api-key" class="key-input" type="password" autocomplete="off"
@@ -109,12 +101,15 @@
                 </div>
                 <p id="api-key-status" class="key-status"></p>
             </div>
+
+            <footer class="menu-foot">GeoBerdsk · сделано Lovazh</footer>
         </div>
     </section>
 
+    <!-- GAME -->
     <section id="screen-game" class="screen">
         <header class="hud">
-            <button type="button" class="hud-x" data-action="menu" aria-label="Меню">←</button>
+            <button type="button" class="hud-x" data-action="menu" aria-label="Меню">✕</button>
             <div class="hud-mid">
                 <span id="hud-mode" class="hud-pill">Классика</span>
                 <span id="hud-round" class="hud-pill">1 / 5</span>
@@ -174,9 +169,10 @@
         </div>
     </section>
 
+    <!-- SUMMARY -->
     <section id="screen-summary" class="screen">
         <div class="panel">
-            <p class="stamp" id="summary-mode">Классика</p>
+            <p class="byline" id="summary-mode">Классика</p>
             <h2 class="panel-h">Итоги</h2>
 
             <div class="score-hero">
@@ -224,9 +220,12 @@
                 <button type="button" id="btn-play-again" class="btn-cta">Ещё раз</button>
                 <button type="button" class="btn-ghost" data-action="menu">В меню</button>
             </div>
+
+            <footer class="menu-foot">от Lovazh</footer>
         </div>
     </section>
 
+    <!-- STATS -->
     <section id="screen-stats" class="screen">
         <div class="panel">
             <div class="panel-top">
@@ -267,6 +266,8 @@
                     <p class="muted">Пока нет сыгранных партий</p>
                 </div>
             </div>
+
+            <footer class="menu-foot">GeoBerdsk · Lovazh</footer>
         </div>
     </section>
 

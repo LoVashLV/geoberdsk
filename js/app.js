@@ -10,6 +10,7 @@ GeoBerdsk.App = (function() {
     let panoramaRetries = 0;
     const MAX_PANORAMA_RETRIES = 8;
     let lastModeId = 'classic';
+    let selectedModeId = 'classic';
     let submitting = false;
 
     function init() {
@@ -107,8 +108,10 @@ GeoBerdsk.App = (function() {
 
     function bindEvents() {
         document.querySelectorAll('[data-mode]').forEach(btn => {
-            btn.addEventListener('click', () => startGame(btn.getAttribute('data-mode')));
+            btn.addEventListener('click', () => selectMode(btn.getAttribute('data-mode')));
         });
+
+        $('btn-play')?.addEventListener('click', () => startGame(selectedModeId));
 
         $('btn-guess').addEventListener('click', submitGuess);
         $('btn-next-round').addEventListener('click', goNextRound);
@@ -153,6 +156,16 @@ GeoBerdsk.App = (function() {
         $('district-choices')?.addEventListener('click', (e) => {
             const btn = e.target.closest('[data-district]');
             if (btn && !btn.disabled) submitDistrictGuess(btn.getAttribute('data-district'));
+        });
+    }
+
+    function selectMode(modeId) {
+        if (!GeoBerdsk.Game.MODES[modeId]) return;
+        selectedModeId = modeId;
+        document.querySelectorAll('[data-mode]').forEach(btn => {
+            const on = btn.getAttribute('data-mode') === modeId;
+            btn.classList.toggle('active', on);
+            btn.setAttribute('aria-selected', on ? 'true' : 'false');
         });
     }
 
@@ -645,7 +658,7 @@ GeoBerdsk.App = (function() {
         if (!container) return;
         container.innerHTML = '';
 
-        const colors = ['#F5C518', '#111111', '#E10600', '#FFD84A', '#FFFFFF', '#2A2A2A'];
+        const colors = ['#6CBB3C', '#57A32E', '#8FD15A', '#FFFFFF', '#3D8B40', '#F5A623'];
         for (let i = 0; i < 48; i++) {
             const piece = document.createElement('div');
             piece.className = 'confetti-piece';
