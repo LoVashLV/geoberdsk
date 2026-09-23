@@ -63,14 +63,26 @@ GeoBerdsk.Storage = (function() {
         });
     }
 
+    function normalizeGithub(nick) {
+        return String(nick || '')
+            .trim()
+            .replace(/^@+/, '')
+            .slice(0, 39);
+    }
+
+    function isValidGithub(nick) {
+        const n = normalizeGithub(nick);
+        return /^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$/.test(n);
+    }
+
     function getNickname() {
-        const nick = (load().player.nickname || '').trim();
-        return nick || 'Player';
+        const nick = normalizeGithub(load().player.nickname || '');
+        return nick || '';
     }
 
     function setNickname(nick) {
         return update(data => {
-            data.player.nickname = String(nick || '').trim().slice(0, 16);
+            data.player.nickname = normalizeGithub(nick);
             return data;
         });
     }
@@ -78,6 +90,7 @@ GeoBerdsk.Storage = (function() {
     function addLeaderboardEntry({ mode, score, rounds }) {
         if (!score || score <= 0) return load();
         const nick = getNickname();
+        if (!nick || !isValidGithub(nick)) return load();
         return update(data => {
             if (!Array.isArray(data.leaderboard)) data.leaderboard = [];
             data.leaderboard.push({
@@ -123,6 +136,7 @@ GeoBerdsk.Storage = (function() {
 
     return {
         load, save, update, addGameHistory, reset,
-        getNickname, setNickname, addLeaderboardEntry, getLeaderboard,
+        getNickname, setNickname, normalizeGithub, isValidGithub,
+        addLeaderboardEntry, getLeaderboard,
     };
 })();

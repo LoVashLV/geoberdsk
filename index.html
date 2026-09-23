@@ -12,70 +12,115 @@
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<link rel="stylesheet" href="css/app.css?v=8">
+<link rel="stylesheet" href="css/app.css?v=9">
 </head>
 <body>
 <div class="fx" aria-hidden="true"><div class="fx-glow"></div><div class="fx-grid"></div></div>
 <div id="confetti-container"></div>
 
 <section id="screen-menu" class="screen active">
+<div class="fx-orbs" aria-hidden="true">
+<span class="orb orb-a"></span>
+<span class="orb orb-b"></span>
+<span class="orb orb-c"></span>
+</div>
 <div class="menu">
-<header class="hero">
-<h1 class="brand"><span class="brand-geo">Geo</span><span class="brand-city">Berdsk</span></h1>
-<p class="by">by Lovazh</p>
-<p class="tag">Угадай улицу по панораме — как GeoGuessr, только Бердск</p>
+<header class="hero" id="hero">
+<h1 class="brand reveal" style="--d:.05s"><span class="brand-geo">Geo</span><span class="brand-city">Berdsk</span></h1>
+<p class="by reveal" style="--d:.12s">by Lovazh</p>
+<p class="tag reveal" style="--d:.2s">Угадай улицу по панораме в городе - Бердск!</p>
 </header>
 
-<div class="card play-card">
-<button type="button" id="btn-play" class="play">Играть</button>
+<div class="card play-card reveal" style="--d:.28s">
+<button type="button" id="btn-play" class="play"><span class="play-shine" aria-hidden="true"></span><span class="play-label">Играть</span></button>
 <p class="play-sub">Классический режим · 5 раундов</p>
-<button type="button" id="btn-modes" class="btn-modes">Режимы</button>
+<button type="button" id="btn-modes" class="btn-modes">
+<span>Режимы</span>
+<span class="btn-modes-hint">4 варианта</span>
+</button>
 </div>
 
-<div class="card soft">
-<div class="nick-row">
-<label for="input-nick">Ник для таблицы</label>
-<input id="input-nick" maxlength="16" autocomplete="nickname" placeholder="Player">
+<div class="card soft profile-card reveal" style="--d:.36s">
+<div class="gh-row">
+<div class="gh-avatar-wrap" id="gh-avatar-wrap">
+<img id="gh-avatar" class="gh-avatar" alt="" hidden>
+<span class="gh-avatar-ph" id="gh-avatar-ph">GH</span>
+</div>
+<div class="gh-fields">
+<label for="input-nick">GitHub профиль</label>
+<div class="gh-input-row">
+<span class="gh-at">@</span>
+<input id="input-nick" maxlength="39" autocomplete="username" spellcheck="false" placeholder="username">
+</div>
+<p class="gh-hint" id="gh-hint">Ник GitHub — это твой игрок в таблице лидеров</p>
+</div>
 </div>
 <div class="xp-head"><span id="player-level">Ур. 1</span><span id="player-level-name">Новичок</span></div>
 <div class="bar"><div id="xp-bar-fill" class="bar-fill" style="width:0%"></div></div>
 <p id="xp-text" class="xp-cap">0 / 200 XP</p>
 </div>
 
-<div class="card soft">
+<div class="card soft lb-card reveal" style="--d:.44s">
 <div class="lb-head">
 <p class="label">Лидеры</p>
-<span id="lb-mode-label" class="lb-mode">Классика</span>
+<div class="lb-tabs" id="lb-tabs" role="tablist">
+<button type="button" class="lb-tab on" data-lb-mode="classic">Классика</button>
+<button type="button" class="lb-tab" data-lb-mode="timeattack">Время</button>
+<button type="button" class="lb-tab" data-lb-mode="districts">Районы</button>
+<button type="button" class="lb-tab" data-lb-mode="marathon">Марафон</button>
+</div>
 </div>
 <div id="leaderboard-list" class="lb-list">
 <p class="muted">Сыграй партию — здесь появятся лучшие результаты</p>
 </div>
 </div>
 
-<div class="links">
+<div class="links reveal" style="--d:.52s">
 <button type="button" id="btn-stats" class="link-btn">Статистика</button>
 </div>
-<p class="foot">GeoBerdsk · by Lovazh</p>
+<p class="foot reveal" style="--d:.58s">GeoBerdsk · by Lovazh</p>
 </div>
 </section>
 
 <div id="modes-modal" class="modal" hidden>
 <div class="modal-backdrop" data-close-modes></div>
-<div class="modal-sheet" role="dialog" aria-label="modes">
-<p class="label">Режимы</p>
+<div class="modal-sheet" role="dialog" aria-labelledby="modes-title">
+<div class="modal-head">
+<p class="label" id="modes-title">Выбери режим</p>
+<button type="button" class="modal-x" data-close-modes aria-label="close">✕</button>
+</div>
 <button type="button" class="mode-pick" data-mode="classic" id="btn-classic">
-<span>Классика</span><small>5 · без таймера</small>
+<span class="mode-pick-ico" aria-hidden="true">C</span>
+<span class="mode-pick-body">
+<span class="mode-pick-name">Классический</span>
+<span class="mode-pick-desc">Пять раундов без таймера. Смотри панораму, ставь метку на карте — чем ближе, тем больше очков.</span>
+<span class="mode-pick-meta">5 раундов · без таймера</span>
+</span>
 </button>
 <button type="button" class="mode-pick" data-mode="timeattack" id="btn-timeattack">
-<span>На время</span><small>5 · 30 сек</small>
+<span class="mode-pick-ico" aria-hidden="true">T</span>
+<span class="mode-pick-body">
+<span class="mode-pick-name">На время</span>
+<span class="mode-pick-desc">Тот же формат, но на каждый раунд только 30 секунд. Думай быстро — иначе очки сгорят.</span>
+<span class="mode-pick-meta">5 раундов · 30 сек</span>
+</span>
 </button>
 <button type="button" class="mode-pick" data-mode="districts" id="btn-districts">
-<span>Районы</span><small>10 · микрорайон</small>
+<span class="mode-pick-ico" aria-hidden="true">D</span>
+<span class="mode-pick-body">
+<span class="mode-pick-name">Районы</span>
+<span class="mode-pick-desc">Десять панорам — угадай микрорайон Бердска. Карта не нужна: выбирай район из списка.</span>
+<span class="mode-pick-meta">10 раундов · микрорайон</span>
+</span>
 </button>
 <button type="button" class="mode-pick" data-mode="marathon" id="btn-marathon">
-<span>Марафон</span><small>до ошибки</small>
+<span class="mode-pick-ico" aria-hidden="true">M</span>
+<span class="mode-pick-body">
+<span class="mode-pick-name">Марафон</span>
+<span class="mode-pick-desc">Иди пока не ошибёшься. Промах дальше 500 м — конец. Серия очков растёт с каждым попаданием.</span>
+<span class="mode-pick-meta">без лимита · до ошибки</span>
+</span>
 </button>
-<button type="button" class="modal-close" data-close-modes>Закрыть</button>
 </div>
 </div>
 
