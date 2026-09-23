@@ -13,18 +13,33 @@ GeoBerdsk.App = (function() {
     let selectedModeId = 'classic';
     let submitting = false;
 
+    const MODE_COPY = {
+        classic: { name: 'Классический', desc: '5 раундов без таймера' },
+        timeattack: { name: 'На время', desc: '5 раундов · 30 секунд каждый' },
+        marathon: { name: 'Марафон', desc: 'Играй, пока не промахнёшься дальше 500 м' },
+    };
+
     function init() {
         injectYandexScript().then(() => {
             GeoBerdsk.Panorama.init();
         });
         selectedModeId = 'classic';
-        syncNickInput();
+        migrateLegacyNick();
         seedLeaderboardFromRecords();
+        refreshAuthUI();
+        selectMode('classic');
         updatePlayerUI();
         updateLeaderboardUI();
-        updatePlaySub();
         bindEvents();
         showScreen('menu');
+    }
+
+    function migrateLegacyNick() {
+        const data = GeoBerdsk.Storage.load();
+        const nick = GeoBerdsk.Storage.normalizeNick(data.player.nickname || '');
+        if (nick && !data.player.registered) {
+            GeoBerdsk.Storage.register(nick);
+        }
     }
 
     function getStoredApiKey() {
@@ -42,7 +57,6 @@ GeoBerdsk.App = (function() {
             }
 
             const key = getStoredApiKey();
-            // Без ключа используем iframe-виджет — JS API не грузим
             if (!key) {
                 resolve();
                 return;
@@ -68,58 +82,51 @@ GeoBerdsk.App = (function() {
                 GeoBerdsk.Map.invalidateSize();
             }, 180);
         }
+        if (screenId === 'menu') refreshAuthUI();
+    }
+
+    function refreshAuthUI() {
+        const registered = GeoBerdsk.Storage.isRegistered();
+        const regCard = $('reg-card');
+        const playBlock = $('play-block');
+        const playBtn = $('btn-play');
+        const nickEl = $('player-nick');
+
+        if (regCard) regCard.hidden = registered;
+        if (playBlock) playBlock.hidden = !registered;
+        if (playBtn) playBtn.disabled = !registered;
+        if (nickEl) nickEl.textContent = registered ? GeoBerdsk.Storage.getNickname() : '—';
     }
 
     function bindEvents() {
-        $('btn-play')?.addEventListener('click', () => {
-            if (!ensureGithubReady()) return;
-            selectedModeId = 'classic';
-            updatePlaySub();
-            updateLeaderboardUI();
-            startGame('classic');
+        $('btn-register')?.addEventListener('click', handleRegister);
+        $('input-reg-nick')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') handleRegister();
         });
 
-        $('btn-modes')?.addEventListener('click', () => openModesModal(true));
-        document.querySelectorAll('[data-close-modes]').forEach(el => {
-            el.addEventListener('click', () => openModesModal(false));
+        $('btn-play')?.addEventListener('click', () => {
+            if (!GeoBerdsk.Storage.isRegistered()) {
+                refreshAuthUI();
+                return;
+            }
+            startGame(selectedModeId || 'classic');
         });
-        document.querySelectorAll('#modes-modal [data-mode]').forEach(btn => {
+
+        document.querySelectorAll('[data-mode]').forEach(btn => {
             btn.addEventListener('click', () => {
-                if (!ensureGithubReady()) return;
                 const modeId = btn.getAttribute('data-mode');
                 selectMode(modeId);
-                openModesModal(false);
-                startGame(modeId);
             });
         });
 
         document.querySelectorAll('[data-lb-mode]').forEach(tab => {
             tab.addEventListener('click', () => {
-                selectedModeId = tab.getAttribute('data-lb-mode') || 'classic';
                 document.querySelectorAll('[data-lb-mode]').forEach(t => {
                     t.classList.toggle('on', t === tab);
                 });
-                updateLeaderboardUI();
+                updateLeaderboardUI(tab.getAttribute('data-lb-mode'));
             });
         });
-
-        const nick = $('input-nick');
-        if (nick) {
-            const saveNick = () => {
-                GeoBerdsk.Storage.setNickname(nick.value);
-                nick.value = GeoBerdsk.Storage.getNickname();
-                refreshGithubProfileUI();
-                updateLeaderboardUI();
-            };
-            nick.addEventListener('change', saveNick);
-            nick.addEventListener('blur', saveNick);
-            nick.addEventListener('input', () => refreshGithubProfileUI(true));
-            nick.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') nick.blur();
-            });
-        }
-
-        bindMenuParallax();
 
         $('btn-guess').addEventListener('click', submitGuess);
         $('btn-next-round').addEventListener('click', goNextRound);
@@ -134,7 +141,7 @@ GeoBerdsk.App = (function() {
         });
 
         $('btn-play-again')?.addEventListener('click', () => {
-            if (!ensureGithubReady()) {
+            if (!GeoBerdsk.Storage.isRegistered()) {
                 showScreen('menu');
                 return;
             }
@@ -165,134 +172,78 @@ GeoBerdsk.App = (function() {
         });
     }
 
-    function selectMode(modeId) {
-        if (!GeoBerdsk.Game.MODES[modeId]) return;
-        selectedModeId = modeId;
-        updatePlaySub();
+    function handleRegister() {
+        const input = $('input-reg-nick');
+        const err = $('reg-error');
+        const result = GeoBerdsk.Storage.register(input ? input.value : '');
+        if (!result.ok) {
+            if (err) {
+                err.hidden = false;
+                err.textContent = result.error || 'Не удалось';
+            }
+            input?.focus();
+            return;
+        }
+        if (err) err.hidden = true;
+        refreshAuthUI();
+        updatePlayerUI();
         updateLeaderboardUI();
     }
 
-    function openModesModal(open) {
-        const modal = $('modes-modal');
-        if (!modal) return;
-        modal.hidden = !open;
-    }
+    function selectMode(modeId) {
+        if (!GeoBerdsk.Game.MODES[modeId]) return;
+        selectedModeId = modeId;
 
-    function syncNickInput() {
-        const nick = $('input-nick');
-        if (!nick) return;
-        nick.value = GeoBerdsk.Storage.getNickname();
-        refreshGithubProfileUI();
-    }
-
-    function updatePlaySub() {
-        const el = document.querySelector('.play-sub');
-        if (el) el.textContent = 'Классический режим · 5 раундов';
-    }
-
-    function githubAvatarUrl(login) {
-        return 'https://github.com/' + encodeURIComponent(login) + '.png?size=96';
-    }
-
-    function refreshGithubProfileUI(previewOnly) {
-        const nickEl = $('input-nick');
-        const raw = nickEl ? nickEl.value : GeoBerdsk.Storage.getNickname();
-        const login = GeoBerdsk.Storage.normalizeGithub(raw);
-        const valid = GeoBerdsk.Storage.isValidGithub(login);
-        const hint = $('gh-hint');
-        const av = $('gh-avatar');
-        const ph = $('gh-avatar-ph');
-        const wrap = $('gh-avatar-wrap');
-        const play = $('btn-play');
-
-        if (hint) {
-            if (!login) {
-                hint.textContent = 'Введи GitHub username — он станет ником в таблице лидеров';
-                hint.className = 'gh-hint';
-            } else if (!valid) {
-                hint.textContent = 'Некорректный username GitHub';
-                hint.className = 'gh-hint warn';
-            } else {
-                hint.textContent = 'Игрок: @' + login + ' · github.com/' + login;
-                hint.className = 'gh-hint ok';
-            }
-        }
-
-        if (av && ph && wrap) {
-            if (valid) {
-                av.src = githubAvatarUrl(login);
-                av.alt = login;
-                av.hidden = false;
-                ph.hidden = true;
-                wrap.classList.add('live');
-            } else {
-                av.hidden = true;
-                av.removeAttribute('src');
-                ph.hidden = false;
-                ph.textContent = login ? login.slice(0, 2).toUpperCase() : 'GH';
-                wrap.classList.remove('live');
-            }
-        }
-
-        if (play) play.classList.toggle('needs-gh', !valid);
-        void previewOnly;
-    }
-
-    function ensureGithubReady() {
-        const nickEl = $('input-nick');
-        const login = GeoBerdsk.Storage.normalizeGithub(nickEl ? nickEl.value : '');
-        if (!GeoBerdsk.Storage.isValidGithub(login)) {
-            refreshGithubProfileUI();
-            const hint = $('gh-hint');
-            if (hint) {
-                hint.textContent = 'Сначала укажи свой GitHub username';
-                hint.className = 'gh-hint warn';
-            }
-            nickEl?.focus();
-            nickEl?.closest('.profile-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            return false;
-        }
-        GeoBerdsk.Storage.setNickname(login);
-        if (nickEl) nickEl.value = login;
-        refreshGithubProfileUI();
-        return true;
-    }
-
-    function bindMenuParallax() {
-        const hero = $('hero');
-        if (!hero || window.matchMedia('(pointer:coarse)').matches) return;
-        const menu = document.querySelector('#screen-menu .menu');
-        document.getElementById('screen-menu')?.addEventListener('pointermove', (e) => {
-            if (!document.getElementById('screen-menu')?.classList.contains('active')) return;
-            const cx = (e.clientX / window.innerWidth - 0.5) * 12;
-            const cy = (e.clientY / window.innerHeight - 0.5) * 10;
-            hero.style.transform = 'translate3d(' + (cx * 0.6) + 'px,' + (cy * 0.5) + 'px,0)';
-            if (menu) menu.style.transform = 'translate3d(' + (cx * -0.15) + 'px,' + (cy * -0.1) + 'px,0)';
+        document.querySelectorAll('.mode-mini[data-mode]').forEach(btn => {
+            btn.classList.toggle('on', btn.getAttribute('data-mode') === modeId);
         });
+
+        const hero = $('mode-hero');
+        if (hero) {
+            hero.classList.toggle('on', modeId === 'classic');
+            hero.setAttribute('data-mode', 'classic');
+        }
+        const nameEl = $('mode-hero-name');
+        const descEl = $('mode-hero-desc');
+        if (nameEl) nameEl.textContent = MODE_COPY.classic.name;
+        if (descEl) descEl.textContent = MODE_COPY.classic.desc;
+
+        updateLeaderboardUI(modeId);
+        document.querySelectorAll('[data-lb-mode]').forEach(t => {
+            t.classList.toggle('on', t.getAttribute('data-lb-mode') === modeId);
+        });
+
+        const sel = $('selected-mode-label');
+        const copy = MODE_COPY[modeId] || MODE_COPY.classic;
+        if (sel) sel.textContent = 'Выбран: ' + copy.name;
     }
 
     function seedLeaderboardFromRecords() {
         const data = GeoBerdsk.Storage.load();
         if ((data.leaderboard || []).length) return;
+        if (!GeoBerdsk.Storage.isRegistered()) return;
         Object.keys(data.records || {}).forEach(mode => {
+            if (!GeoBerdsk.Game.MODES[mode]) return;
             const score = data.records[mode] || 0;
-            if (score > 0 && GeoBerdsk.Storage.getNickname()) {
+            if (score > 0) {
                 GeoBerdsk.Storage.addLeaderboardEntry({ mode, score, rounds: 0 });
             }
         });
     }
 
-    function updateLeaderboardUI() {
+    function updateLeaderboardUI(modeOverride) {
         const list = $('leaderboard-list');
         if (!list) return;
 
-        const modeId = selectedModeId || 'classic';
+        const modeId = modeOverride || selectedModeId || 'classic';
         document.querySelectorAll('[data-lb-mode]').forEach(tab => {
             tab.classList.toggle('on', tab.getAttribute('data-lb-mode') === modeId);
         });
 
         const entries = GeoBerdsk.Storage.getLeaderboard(modeId, 10);
-        const myNick = GeoBerdsk.Storage.getNickname();
+        const myNick = GeoBerdsk.Storage.isRegistered()
+            ? GeoBerdsk.Storage.getNickname()
+            : '';
 
         if (!entries.length) {
             list.innerHTML = '<p class="muted">Сыграй партию — здесь появятся лучшие результаты</p>';
@@ -300,20 +251,14 @@ GeoBerdsk.App = (function() {
         }
 
         list.innerHTML = entries.map((e, i) => {
-            const me = e.nick === myNick ? ' me' : '';
-            const login = GeoBerdsk.Storage.normalizeGithub(e.nick);
-            const href = 'https://github.com/' + encodeURIComponent(login);
-            const av = githubAvatarUrl(login);
+            const me = myNick && e.nick === myNick ? ' me' : '';
             return '<div class="lb-row' + me + '">' +
                 '<span class="lb-rank">' + (i + 1) + '</span>' +
-                '<img class="lb-av" src="' + av + '" alt="" loading="lazy" width="28" height="28">' +
-                '<span class="lb-name"><a href="' + href + '" target="_blank" rel="noopener">' +
-                escapeHtml(login) + '</a></span>' +
+                '<span class="lb-name">' + escapeHtml(e.nick) + '</span>' +
                 '<span class="lb-score">' + Number(e.score).toLocaleString('ru-RU') + '</span>' +
                 '</div>';
         }).join('');
     }
-
 
     async function startGame(modeId) {
         lastModeId = modeId;
@@ -521,10 +466,15 @@ GeoBerdsk.App = (function() {
         }
         updatePlayerUI();
         updateLeaderboardUI();
+        refreshAuthUI();
         showScreen('menu');
     }
 
     function updatePlayerUI() {
+        const nickEl = $('player-nick');
+        if (nickEl && GeoBerdsk.Storage.isRegistered()) {
+            nickEl.textContent = GeoBerdsk.Storage.getNickname();
+        }
         const data = GeoBerdsk.Storage.load();
         const info = GeoBerdsk.XP.getLevelInfo(data.player.xp);
 

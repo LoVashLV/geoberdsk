@@ -1,5 +1,7 @@
 /**
  * GeoBerdsk — Config
+ * Ключ JS API Яндекс.Карт (в кабинете добавь домены:
+ * lovashlv.github.io и localhost)
  */
 window.GeoBerdsk = window.GeoBerdsk || {};
 

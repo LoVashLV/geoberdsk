@@ -1,7 +1,7 @@
 /**
  * GeoBerdsk — Panorama Manager
- * Чистый режим: JS API + ключ (без адресов и ссылки на Карты).
- * Запасной: iframe с масками поверх хрома Яндекса.
+ * С ключом: JS API без panoramaName / маркеров адресов.
+ * Без ключа или при ошибке: iframe + маски.
  */
 window.GeoBerdsk = window.GeoBerdsk || {};
 
@@ -76,7 +76,11 @@ GeoBerdsk.Panorama = (function() {
                         startSpoilerWatch(container);
                         return true;
                     }
+                } else {
+                    console.warn('GeoBerdsk: panorama.locate empty — check API key domains / quota');
                 }
+            } else {
+                console.warn('GeoBerdsk: ymaps not ready — falling back to iframe');
             }
         }
 
@@ -86,7 +90,7 @@ GeoBerdsk.Panorama = (function() {
     function locateWithApi(lat, lng) {
         return new Promise((resolve) => {
             const point = [lat, lng];
-            const radii = [80, 250, 500];
+            const radii = [80, 250, 500, 1000];
             let i = 0;
 
             function next() {
@@ -107,8 +111,9 @@ GeoBerdsk.Panorama = (function() {
                             if (panoramas && panoramas.length) resolve(panoramas[0]);
                             else next();
                         },
-                        () => {
+                        (err) => {
                             clearTimeout(timeout);
+                            console.warn('GeoBerdsk: panorama.locate error', err);
                             resolve(null);
                         }
                     );
@@ -122,7 +127,7 @@ GeoBerdsk.Panorama = (function() {
         });
     }
 
-    /** Убираем маркеры с адресами / номерами домов */
+    /** Скрываем имя улицы и адресные маркеры */
     function stripSpoilers(panorama) {
         try {
             return new Proxy(panorama, {
@@ -133,6 +138,9 @@ GeoBerdsk.Panorama = (function() {
                         prop === 'getOrganizations'
                     ) {
                         return () => [];
+                    }
+                    if (prop === 'getName') {
+                        return () => '';
                     }
                     const value = Reflect.get(target, prop, receiver);
                     return typeof value === 'function' ? value.bind(target) : value;
@@ -146,6 +154,7 @@ GeoBerdsk.Panorama = (function() {
     function createApiPlayer(containerId, panorama) {
         try {
             const clean = stripSpoilers(panorama);
+            // controls без panoramaName — иначе сверху видна улица
             player = new ymaps.panorama.Player(containerId, clean, {
                 direction: [Math.random() * 360, 0],
                 span: [110, 55],
@@ -153,6 +162,15 @@ GeoBerdsk.Panorama = (function() {
                 suppressMapOpenBlock: true,
                 hotkeysEnabled: false,
             });
+
+            // на смене точки снова глушим маркеры
+            try {
+                player.events.add('panoramachange', () => {
+                    const el = document.getElementById(containerId);
+                    if (el) startSpoilerWatch(el);
+                });
+            } catch (e) { /* ignore */ }
+
             return true;
         } catch (e) {
             console.warn('GeoBerdsk: panorama player error', e);
@@ -176,7 +194,6 @@ GeoBerdsk.Panorama = (function() {
             iframe.setAttribute('allowfullscreen', 'true');
             iframe.setAttribute('loading', 'eager');
             iframe.referrerPolicy = 'no-referrer-when-downgrade';
-            // Источник без лишних слоёв карты — только панорама
             iframe.src =
                 'https://yandex.ru/map-widget/v1/?ll=' + ll +
                 '&z=17' +
@@ -185,7 +202,6 @@ GeoBerdsk.Panorama = (function() {
                 '&panorama%5Bdirection%5D=' + direction + '%2C0' +
                 '&panorama%5Bspan%5D=120%2C60';
 
-            // Маски закрывают хром Яндекса (ссылка, название улицы, футер)
             const masks = document.createElement('div');
             masks.className = 'panorama-spoiler-masks';
             masks.setAttribute('aria-hidden', 'true');
@@ -219,7 +235,6 @@ GeoBerdsk.Panorama = (function() {
         const style = document.createElement('style');
         style.id = 'geoberdsk-spoiler-css';
         style.textContent = `
-            /* Скрываем спойлеры официального плеера Яндекса */
             .ymaps-panorama-player a[href*="yandex.ru/maps"],
             .ymaps-panorama-player a[href*="maps.yandex"],
             ymaps[class*="copyright"],
@@ -239,14 +254,13 @@ GeoBerdsk.Panorama = (function() {
             ymaps[class*="hint"],
             .ymaps-e-hotspot-layer,
             [class*="panorama"][class*="marker"],
-            [class*="panorama"][class*="hotspot"] {
+            [class*="panorama"][class*="hotspot"],
+            [class*="panorama-name"],
+            [class*="panoramaName"] {
                 display: none !important;
                 visibility: hidden !important;
                 opacity: 0 !important;
                 pointer-events: none !important;
-                width: 0 !important;
-                height: 0 !important;
-                overflow: hidden !important;
             }
         `;
         document.head.appendChild(style);
@@ -260,8 +274,9 @@ GeoBerdsk.Panorama = (function() {
             container.querySelectorAll('a[href*="yandex.ru/maps"], a[href*="maps.yandex"]').forEach(a => {
                 a.remove();
             });
-            container.querySelectorAll('[class*="marker"], [class*="hotspot"], [class*="gototext"], [class*="panorama-name"]').forEach(el => {
-                // Не трогаем сам canvas/player root
+            container.querySelectorAll(
+                '[class*="marker"], [class*="hotspot"], [class*="gototext"], [class*="panorama-name"], [class*="panoramaName"]'
+            ).forEach(el => {
                 if (el.querySelector && el.querySelector('canvas')) return;
                 el.style.setProperty('display', 'none', 'important');
                 el.style.setProperty('visibility', 'hidden', 'important');
@@ -272,10 +287,10 @@ GeoBerdsk.Panorama = (function() {
         kill();
         spoilerObserver = new MutationObserver(kill);
         spoilerObserver.observe(container, { childList: true, subtree: true });
-        // Яндекс дорисовывает маркеры с задержкой
-        setTimeout(kill, 500);
-        setTimeout(kill, 1500);
-        setTimeout(kill, 3000);
+        setTimeout(kill, 400);
+        setTimeout(kill, 1200);
+        setTimeout(kill, 2500);
+        setTimeout(kill, 4500);
     }
 
     function stopSpoilerWatch() {
@@ -303,7 +318,7 @@ GeoBerdsk.Panorama = (function() {
     }
 
     function hasCleanMode() {
-        return !!getApiKey();
+        return !!getApiKey() && isReady && !initFailed;
     }
 
     return { init, whenReady, load, destroy, isAvailable, hasCleanMode, getApiKey };
