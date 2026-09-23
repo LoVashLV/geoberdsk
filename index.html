@@ -12,7 +12,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<link rel="stylesheet" href="css/app.css?v=5">
+<link rel="stylesheet" href="css/app.css?v=8">
 </head>
 <body>
 <div class="fx" aria-hidden="true"><div class="fx-glow"></div><div class="fx-grid"></div></div>
@@ -21,53 +21,63 @@
 <section id="screen-menu" class="screen active">
 <div class="menu">
 <header class="hero">
-<div class="pin" aria-hidden="true"></div>
-<h1 class="brand">GeoBerdsk</h1>
-<p class="by">игра от Lovazh</p>
+<h1 class="brand"><span class="brand-geo">Geo</span><span class="brand-city">Berdsk</span></h1>
+<p class="by">by Lovazh</p>
 <p class="tag">Угадай улицу по панораме — как GeoGuessr, только Бердск</p>
 </header>
 
 <div class="card play-card">
-<p class="label">Режим</p>
-<div class="modes" role="tablist">
-<button type="button" class="mode on" data-mode="classic" id="btn-classic">Классика</button>
-<button type="button" class="mode" data-mode="timeattack" id="btn-timeattack">На время</button>
-<button type="button" class="mode" data-mode="districts" id="btn-districts">Районы</button>
-<button type="button" class="mode" data-mode="marathon" id="btn-marathon">Марафон</button>
-</div>
-<p id="mode-hint" class="hint">5 раундов · без лимита времени</p>
 <button type="button" id="btn-play" class="play">Играть</button>
+<p class="play-sub">Классический режим · 5 раундов</p>
+<button type="button" id="btn-modes" class="btn-modes">Режимы</button>
 </div>
 
 <div class="card soft">
+<div class="nick-row">
+<label for="input-nick">Ник для таблицы</label>
+<input id="input-nick" maxlength="16" autocomplete="nickname" placeholder="Player">
+</div>
 <div class="xp-head"><span id="player-level">Ур. 1</span><span id="player-level-name">Новичок</span></div>
 <div class="bar"><div id="xp-bar-fill" class="bar-fill" style="width:0%"></div></div>
 <p id="xp-text" class="xp-cap">0 / 200 XP</p>
-<div class="recs">
-<div><i>Классика</i><b id="record-classic">—</b></div>
-<div><i>Время</i><b id="record-timeattack">—</b></div>
-<div><i>Районы</i><b id="record-districts">—</b></div>
-<div><i>Марафон</i><b id="record-marathon">—</b></div>
+</div>
+
+<div class="card soft">
+<div class="lb-head">
+<p class="label">Лидеры</p>
+<span id="lb-mode-label" class="lb-mode">Классика</span>
+</div>
+<div id="leaderboard-list" class="lb-list">
+<p class="muted">Сыграй партию — здесь появятся лучшие результаты</p>
 </div>
 </div>
 
 <div class="links">
 <button type="button" id="btn-stats" class="link-btn">Статистика</button>
-<button type="button" id="btn-toggle-key" class="link-btn ghost">Ключ API</button>
 </div>
-
-<div id="api-key-panel" class="card soft" hidden>
-<p class="label">Панорамы без названий улиц</p>
-<p class="tiny">Бесплатный ключ Яндекса. <a href="https://developer.tech.yandex.ru/services/" target="_blank" rel="noopener">Получить</a> · <code>lovashlv.github.io</code></p>
-<div class="keyline">
-<input id="input-api-key" type="password" autocomplete="off" placeholder="API-key" spellcheck="false">
-<button type="button" id="btn-save-api-key">OK</button>
-</div>
-<p id="api-key-status" class="status"></p>
-</div>
-<p class="foot">GeoBerdsk · Lovazh</p>
+<p class="foot">GeoBerdsk · by Lovazh</p>
 </div>
 </section>
+
+<div id="modes-modal" class="modal" hidden>
+<div class="modal-backdrop" data-close-modes></div>
+<div class="modal-sheet" role="dialog" aria-label="modes">
+<p class="label">Режимы</p>
+<button type="button" class="mode-pick" data-mode="classic" id="btn-classic">
+<span>Классика</span><small>5 · без таймера</small>
+</button>
+<button type="button" class="mode-pick" data-mode="timeattack" id="btn-timeattack">
+<span>На время</span><small>5 · 30 сек</small>
+</button>
+<button type="button" class="mode-pick" data-mode="districts" id="btn-districts">
+<span>Районы</span><small>10 · микрорайон</small>
+</button>
+<button type="button" class="mode-pick" data-mode="marathon" id="btn-marathon">
+<span>Марафон</span><small>до ошибки</small>
+</button>
+<button type="button" class="modal-close" data-close-modes>Закрыть</button>
+</div>
+</div>
 
 <section id="screen-game" class="screen">
 <header class="hud">
@@ -142,7 +152,7 @@
 <button type="button" id="btn-play-again" class="btn-cta">Ещё раз</button>
 <button type="button" class="btn-ghost" data-action="menu">В меню</button>
 </div>
-<p class="foot">Lovazh</p>
+<p class="foot">by Lovazh</p>
 </div>
 </section>
 
@@ -157,7 +167,7 @@
 <div class="metric"><div id="stats-streak" class="metric-v">0</div><div class="metric-l">Лучшая серия</div></div>
 </div>
 <div class="detail-block"><p class="detail-h">История</p><div id="stats-history"><p class="muted">Пока нет сыгранных партий</p></div></div>
-<p class="foot">GeoBerdsk · Lovazh</p>
+<p class="foot">GeoBerdsk · by Lovazh</p>
 </div>
 </section>
 

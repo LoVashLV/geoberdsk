@@ -17,8 +17,12 @@ GeoBerdsk.App = (function() {
         injectYandexScript().then(() => {
             GeoBerdsk.Panorama.init();
         });
+        selectedModeId = 'classic';
+        syncNickInput();
+        seedLeaderboardFromRecords();
         updatePlayerUI();
-        updateApiKeyUI();
+        updateLeaderboardUI();
+        updatePlaySub();
         bindEvents();
         showScreen('menu');
     }
@@ -38,59 +42,19 @@ GeoBerdsk.App = (function() {
             }
 
             const key = getStoredApiKey();
+            // Без ключа используем iframe-виджет — JS API не грузим
+            if (!key) {
+                resolve();
+                return;
+            }
+
             const script = document.createElement('script');
-            script.src = 'https://api-maps.yandex.ru/2.1/?lang=ru_RU&load=package.full' +
-                (key ? '&apikey=' + encodeURIComponent(key) : '');
+            script.src = 'https://api-maps.yandex.ru/2.1/?lang=ru_RU&load=package.full&apikey=' +
+                encodeURIComponent(key);
             script.onload = () => resolve();
             script.onerror = () => resolve();
             document.head.appendChild(script);
         });
-    }
-
-    function updateApiKeyUI() {
-        const input = $('input-api-key');
-        const status = $('api-key-status');
-        const key = getStoredApiKey();
-
-        if (input && key) {
-            input.value = key;
-            input.placeholder = 'Ключ сохранён';
-        }
-        if (status) {
-            status.textContent = key
-                ? 'Ключ активен — адреса скрыты'
-                : 'Без ключа виджет может показывать названия улиц';
-            status.classList.toggle('ok', !!key);
-        }
-    }
-
-    function saveApiKey() {
-        const input = $('input-api-key');
-        if (!input) return;
-        const key = input.value.trim();
-
-        GeoBerdsk.Storage.update(data => {
-            data.settings.yandexApiKey = key;
-            return data;
-        });
-
-        if (GeoBerdsk.CONFIG) GeoBerdsk.CONFIG.yandexApiKey = key;
-
-        const status = $('api-key-status');
-        if (status) {
-            status.textContent = key
-                ? 'Сохранено. Перезагрузка…'
-                : 'Ключ удалён. Перезагрузка…';
-            status.classList.add('ok');
-        }
-
-        setTimeout(() => location.reload(), 500);
-    }
-
-    function toggleKeyPanel() {
-        const panel = $('api-key-panel');
-        if (!panel) return;
-        panel.hidden = !panel.hidden;
     }
 
     function showScreen(screenId) {
@@ -107,11 +71,36 @@ GeoBerdsk.App = (function() {
     }
 
     function bindEvents() {
-        document.querySelectorAll('[data-mode]').forEach(btn => {
-            btn.addEventListener('click', () => selectMode(btn.getAttribute('data-mode')));
+        $('btn-play')?.addEventListener('click', () => {
+            selectedModeId = 'classic';
+            updatePlaySub();
+            updateLeaderboardUI();
+            startGame('classic');
         });
 
-        $('btn-play')?.addEventListener('click', () => startGame(selectedModeId));
+        $('btn-modes')?.addEventListener('click', () => openModesModal(true));
+        document.querySelectorAll('[data-close-modes]').forEach(el => {
+            el.addEventListener('click', () => openModesModal(false));
+        });
+        document.querySelectorAll('#modes-modal [data-mode]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const modeId = btn.getAttribute('data-mode');
+                selectMode(modeId);
+                openModesModal(false);
+                startGame(modeId);
+            });
+        });
+
+        const nick = $('input-nick');
+        if (nick) {
+            nick.addEventListener('change', () => {
+                GeoBerdsk.Storage.setNickname(nick.value);
+                updateLeaderboardUI();
+            });
+            nick.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') nick.blur();
+            });
+        }
 
         $('btn-guess').addEventListener('click', submitGuess);
         $('btn-next-round').addEventListener('click', goNextRound);
@@ -130,12 +119,6 @@ GeoBerdsk.App = (function() {
         });
 
         $('btn-toggle-map')?.addEventListener('click', toggleMiniMap);
-        $('btn-toggle-key')?.addEventListener('click', toggleKeyPanel);
-
-        $('btn-save-api-key')?.addEventListener('click', saveApiKey);
-        $('input-api-key')?.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') saveApiKey();
-        });
 
         const sheet = $('map-guess-area');
         sheet?.addEventListener('mouseenter', () => {
@@ -162,21 +145,72 @@ GeoBerdsk.App = (function() {
     function selectMode(modeId) {
         if (!GeoBerdsk.Game.MODES[modeId]) return;
         selectedModeId = modeId;
-        document.querySelectorAll('[data-mode]').forEach(btn => {
-            const on = btn.getAttribute('data-mode') === modeId;
-            btn.classList.toggle('on', on);
-            btn.classList.toggle('active', on);
-            btn.setAttribute('aria-selected', on ? 'true' : 'false');
-        });
-        const hints = {
-            classic: '5 \u0440\u0430\u0443\u043d\u0434\u043e\u0432 \u00b7 \u0431\u0435\u0437 \u043b\u0438\u043c\u0438\u0442\u0430 \u0432\u0440\u0435\u043c\u0435\u043d\u0438',
-            timeattack: '5 \u0440\u0430\u0443\u043d\u0434\u043e\u0432 \u00b7 30 \u0441\u0435\u043a\u0443\u043d\u0434',
-            districts: '10 \u0440\u0430\u0443\u043d\u0434\u043e\u0432 \u00b7 \u0443\u0433\u0430\u0434\u0430\u0439 \u043c\u0438\u043a\u0440\u043e\u0440\u0430\u0439\u043e\u043d',
-            marathon: '\u0418\u0433\u0440\u0430\u0439, \u043f\u043e\u043a\u0430 \u043d\u0435 \u043f\u0440\u043e\u043c\u0430\u0445\u043d\u0451\u0448\u044c\u0441\u044f (>500 \u043c)',
-        };
-        const hint = document.getElementById('mode-hint');
-        if (hint) hint.textContent = hints[modeId] || '';
+        updatePlaySub();
+        updateLeaderboardUI();
     }
+
+    function openModesModal(open) {
+        const modal = $('modes-modal');
+        if (!modal) return;
+        modal.hidden = !open;
+    }
+
+    function syncNickInput() {
+        const nick = $('input-nick');
+        if (!nick) return;
+        const saved = (GeoBerdsk.Storage.load().player.nickname || '').trim();
+        nick.value = saved;
+    }
+
+    function updatePlaySub() {
+        const el = document.querySelector('.play-sub');
+        if (el) el.textContent = 'Классический режим · 5 раундов';
+    }
+
+    function seedLeaderboardFromRecords() {
+        const data = GeoBerdsk.Storage.load();
+        if ((data.leaderboard || []).length) return;
+        const nick = GeoBerdsk.Storage.getNickname();
+        Object.keys(data.records || {}).forEach(mode => {
+            const score = data.records[mode] || 0;
+            if (score > 0) {
+                GeoBerdsk.Storage.addLeaderboardEntry({ mode, score, rounds: 0 });
+            }
+        });
+        // restore nick if seed used default Player with empty nick
+        if ((data.player.nickname || '').trim()) {
+            GeoBerdsk.Storage.setNickname(data.player.nickname);
+        }
+        void nick;
+    }
+
+    function updateLeaderboardUI() {
+        const list = $('leaderboard-list');
+        const label = $('lb-mode-label');
+        if (!list) return;
+
+        const modeId = selectedModeId || 'classic';
+        const mode = GeoBerdsk.Game.MODES[modeId];
+        if (label) label.textContent = mode ? mode.name : 'Классика';
+
+        const entries = GeoBerdsk.Storage.getLeaderboard(modeId, 10);
+        const myNick = GeoBerdsk.Storage.getNickname();
+
+        if (!entries.length) {
+            list.innerHTML = '<p class="muted">Сыграй партию — здесь появятся лучшие результаты</p>';
+            return;
+        }
+
+        list.innerHTML = entries.map((e, i) => {
+            const me = e.nick === myNick ? ' me' : '';
+            return '<div class="lb-row' + me + '">' +
+                '<span class="lb-rank">' + (i + 1) + '</span>' +
+                '<span class="lb-name">' + escapeHtml(e.nick) + '</span>' +
+                '<span class="lb-score">' + Number(e.score).toLocaleString('ru-RU') + '</span>' +
+                '</div>';
+        }).join('');
+    }
+
 
     async function startGame(modeId) {
         lastModeId = modeId;
@@ -367,9 +401,13 @@ GeoBerdsk.App = (function() {
 
     function finishGame() {
         const summary = GeoBerdsk.Game.endGame();
+        if (summary && summary.mode && summary.mode.id) {
+            selectedModeId = summary.mode.id;
+        }
         GeoBerdsk.Panorama.destroy();
         showGameSummary(summary);
         updatePlayerUI();
+        updateLeaderboardUI();
     }
 
     function returnToMenu() {
@@ -379,6 +417,7 @@ GeoBerdsk.App = (function() {
             try { GeoBerdsk.Game.endGame(); } catch (e) { /* ignore */ }
         }
         updatePlayerUI();
+        updateLeaderboardUI();
         showScreen('menu');
     }
 

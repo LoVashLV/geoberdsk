@@ -1,6 +1,5 @@
 /**
  * GeoBerdsk — Storage Manager
- * Handles all localStorage persistence (player data, history, settings).
  */
 window.GeoBerdsk = window.GeoBerdsk || {};
 
@@ -12,8 +11,9 @@ GeoBerdsk.Storage = (function() {
             xp: 0,
             gamesPlayed: 0,
             totalRounds: 0,
-            perfectHits: 0,    // < 50m
+            perfectHits: 0,
             bestStreak: 0,
+            nickname: '',
         },
         records: {
             classic: 0,
@@ -21,34 +21,25 @@ GeoBerdsk.Storage = (function() {
             districts: 0,
             marathon: 0,
         },
-        history: [],  // last 50 games
+        leaderboard: [],
+        history: [],
         settings: {
             soundEnabled: true,
             yandexApiKey: '',
         },
     };
 
-    /**
-     * Load all saved data
-     * @returns {Object}
-     */
     function load() {
         try {
             const raw = localStorage.getItem(STORAGE_KEY);
             if (!raw) return deepClone(DEFAULT_DATA);
-            const data = JSON.parse(raw);
-            // Merge with defaults to handle schema migrations
-            return deepMerge(deepClone(DEFAULT_DATA), data);
+            return deepMerge(deepClone(DEFAULT_DATA), JSON.parse(raw));
         } catch (e) {
-            console.warn('GeoBerdsk: Failed to load data, using defaults', e);
+            console.warn('GeoBerdsk: Failed to load data', e);
             return deepClone(DEFAULT_DATA);
         }
     }
 
-    /**
-     * Save all data
-     * @param {Object} data
-     */
     function save(data) {
         try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -57,10 +48,6 @@ GeoBerdsk.Storage = (function() {
         }
     }
 
-    /**
-     * Update player data partially
-     * @param {Function} updater - receives current data, should return updated data
-     */
     function update(updater) {
         const data = load();
         const updated = updater(data);
@@ -68,32 +55,55 @@ GeoBerdsk.Storage = (function() {
         return updated || data;
     }
 
-    /**
-     * Add a game to history
-     * @param {Object} gameRecord
-     */
     function addGameHistory(gameRecord) {
         return update(data => {
-            data.history.unshift({
-                ...gameRecord,
-                timestamp: Date.now(),
-            });
-            // Keep only last 50 games
-            if (data.history.length > 50) {
-                data.history = data.history.slice(0, 50);
-            }
+            data.history.unshift({ ...gameRecord, timestamp: Date.now() });
+            if (data.history.length > 50) data.history = data.history.slice(0, 50);
             return data;
         });
     }
 
-    /**
-     * Reset all data
-     */
+    function getNickname() {
+        const nick = (load().player.nickname || '').trim();
+        return nick || 'Player';
+    }
+
+    function setNickname(nick) {
+        return update(data => {
+            data.player.nickname = String(nick || '').trim().slice(0, 16);
+            return data;
+        });
+    }
+
+    function addLeaderboardEntry({ mode, score, rounds }) {
+        if (!score || score <= 0) return load();
+        const nick = getNickname();
+        return update(data => {
+            if (!Array.isArray(data.leaderboard)) data.leaderboard = [];
+            data.leaderboard.push({
+                nick,
+                mode,
+                score,
+                rounds: rounds || 0,
+                timestamp: Date.now(),
+            });
+            data.leaderboard.sort((a, b) => b.score - a.score || a.timestamp - b.timestamp);
+            // keep top 40 overall
+            data.leaderboard = data.leaderboard.slice(0, 40);
+            return data;
+        });
+    }
+
+    function getLeaderboard(modeId, limit) {
+        const list = load().leaderboard || [];
+        const filtered = modeId ? list.filter(e => e.mode === modeId) : list.slice();
+        filtered.sort((a, b) => b.score - a.score || a.timestamp - b.timestamp);
+        return filtered.slice(0, limit || 10);
+    }
+
     function reset() {
         save(deepClone(DEFAULT_DATA));
     }
-
-    // ─── Helpers ────────────────────────────────────────────
 
     function deepClone(obj) {
         return JSON.parse(JSON.stringify(obj));
@@ -111,5 +121,8 @@ GeoBerdsk.Storage = (function() {
         return target;
     }
 
-    return { load, save, update, addGameHistory, reset };
+    return {
+        load, save, update, addGameHistory, reset,
+        getNickname, setNickname, addLeaderboardEntry, getLeaderboard,
+    };
 })();
