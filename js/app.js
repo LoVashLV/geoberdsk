@@ -645,7 +645,7 @@ GeoBerdsk.App = (function() {
         if (!container) return;
         container.innerHTML = '';
 
-        const colors = ['#0D7377', '#14919B', '#F4A261', '#E76F51', '#2A9D8F', '#E9C46A'];
+        const colors = ['#F5C518', '#111111', '#E10600', '#FFD84A', '#FFFFFF', '#2A2A2A'];
         for (let i = 0; i < 48; i++) {
             const piece = document.createElement('div');
             piece.className = 'confetti-piece';

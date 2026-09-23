@@ -3,36 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#0E1A24">
+    <meta name="theme-color" content="#F5C518">
     <title>GeoBerdsk — угадай Бердск</title>
     <meta name="description" content="Угадай место в Бердске по панораме. GeoGuessr по Новосибирской области.">
     <meta name="apple-mobile-web-app-capable" content="yes">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Unbounded:wght@600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <div class="bg" aria-hidden="true">
-        <div class="bg-sky"></div>
-        <div class="bg-topo"></div>
-        <div class="bg-glow"></div>
+    <div class="stage" aria-hidden="true">
+        <div class="stage-stripe stage-stripe-a"></div>
+        <div class="stage-stripe stage-stripe-b"></div>
+        <div class="stage-noise"></div>
     </div>
     <div id="confetti-container"></div>
 
-    <!-- MENU -->
     <section id="screen-menu" class="screen active">
         <div class="menu">
             <header class="menu-hero">
-                <p class="eyebrow">Бердск · НСО</p>
-                <h1 class="brand">
-                    <span class="brand-geo">Geo</span><span class="brand-city">Berdsk</span>
-                </h1>
-                <p class="lead">Смотри панораму — ставь метку на карте. Узнаешь город лучше, чем навигатор.</p>
+                <p class="stamp">Бердск · НСО</p>
+                <h1 class="brand">GEOBERDSK</h1>
+                <p class="lead">Панорама улицы. Метка на карте. Кто лучше знает город?</p>
             </header>
 
             <div class="progress-block">
@@ -48,6 +45,7 @@
 
             <div class="modes">
                 <button type="button" class="mode" data-mode="classic" id="btn-classic">
+                    <span class="mode-num">01</span>
                     <span class="mode-main">
                         <span class="mode-title">Классика</span>
                         <span class="mode-sub">5 раундов · без таймера</span>
@@ -58,6 +56,7 @@
                     </span>
                 </button>
                 <button type="button" class="mode" data-mode="timeattack" id="btn-timeattack">
+                    <span class="mode-num">02</span>
                     <span class="mode-main">
                         <span class="mode-title">На время</span>
                         <span class="mode-sub">5 раундов · 30 сек</span>
@@ -68,6 +67,7 @@
                     </span>
                 </button>
                 <button type="button" class="mode" data-mode="districts" id="btn-districts">
+                    <span class="mode-num">03</span>
                     <span class="mode-main">
                         <span class="mode-title">Районы</span>
                         <span class="mode-sub">Угадай микрорайон</span>
@@ -78,6 +78,7 @@
                     </span>
                 </button>
                 <button type="button" class="mode" data-mode="marathon" id="btn-marathon">
+                    <span class="mode-num">04</span>
                     <span class="mode-main">
                         <span class="mode-title">Марафон</span>
                         <span class="mode-sub">Пока не промахнёшься</span>
@@ -99,7 +100,7 @@
                 <p class="key-desc">
                     Бесплатный ключ Яндекса.
                     <a href="https://developer.tech.yandex.ru/services/" target="_blank" rel="noopener">Получить</a>
-                    → «JavaScript API и HTTP Геокодер». В настройках ключа добавь домен сайта.
+                    → «JavaScript API и HTTP Геокодер». В ограничениях добавь домен сайта.
                 </p>
                 <div class="key-row">
                     <input id="input-api-key" class="key-input" type="password" autocomplete="off"
@@ -111,7 +112,6 @@
         </div>
     </section>
 
-    <!-- GAME -->
     <section id="screen-game" class="screen">
         <header class="hud">
             <button type="button" class="hud-x" data-action="menu" aria-label="Меню">←</button>
@@ -174,10 +174,9 @@
         </div>
     </section>
 
-    <!-- SUMMARY -->
     <section id="screen-summary" class="screen">
         <div class="panel">
-            <p class="eyebrow" id="summary-mode">Классика</p>
+            <p class="stamp" id="summary-mode">Классика</p>
             <h2 class="panel-h">Итоги</h2>
 
             <div class="score-hero">
@@ -228,7 +227,6 @@
         </div>
     </section>
 
-    <!-- STATS -->
     <section id="screen-stats" class="screen">
         <div class="panel">
             <div class="panel-top">
